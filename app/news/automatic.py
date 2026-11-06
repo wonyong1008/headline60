@@ -41,7 +41,7 @@ def discover(query: str) -> list[str]:
     return list(dict.fromkeys(url for _, url in sorted(ranked, reverse=True)))[:5]
 
 
-def excerpts(page: dict, query: str, *, official_only: bool = True, fallback: bool = False) -> list[dict]:
+def excerpts(page: dict, query: str, *, official_only: bool = True, fallback: bool = False, limit: int = 4) -> list[dict]:
     if not page['published_date'] or (official_only and not official_url(page['url'])):
         return []
     wanted = terms(query)
@@ -71,7 +71,7 @@ def excerpts(page: dict, query: str, *, official_only: bool = True, fallback: bo
         # The user's own URL is always usable: with no keyword match, use its lead paragraphs.
         ranked = eligible
     # Ties prefer earlier paragraphs (news is written lead-first).
-    selected = sorted(sorted(ranked, key=lambda item: (-item[0], item[1]))[:4], key=lambda item: item[1])
+    selected = sorted(sorted(ranked, key=lambda item: (-item[0], item[1]))[:limit], key=lambda item: item[1])
     result = []
     title = page.get('title', '').strip()
     if official_url(page['url']) and 10 <= len(title) <= 300:
@@ -166,8 +166,9 @@ def gather(draft: dict, source: dict | None = None) -> tuple[list[dict], dict]:
                 known_urls.add(page['url'])
         except (httpx.HTTPError, OSError, ValueError, NewsError) as exc:
             errors.append(f'{url}: {str(exc)[:180]}')
+    # A one-minute video needs about twice the material of a 30-second one.
     found = [item for page in pages for item in (
-        excerpts(page, query, official_only=False, fallback=True) if page is source
+        excerpts(page, query, official_only=False, fallback=True, limit=8 if draft.get('seconds') == 60 else 4) if page is source
         else excerpts(page, query, official_only=medical or source is None))]
     if source is not None and medical and not official_url(source['url']):
         found += source_outline(source)

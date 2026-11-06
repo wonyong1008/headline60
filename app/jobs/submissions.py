@@ -90,7 +90,8 @@ class SubmissionQueue:
 
     def _draft(self, row: dict, articles: list[dict] | None = None, category="trending") -> dict:
         defaults = DraftCreate(article_ids=[a["id"] for a in articles] if articles else ["url-import"],
-                               category=category, subtitle_style="dynamic", template="story_explainer")
+                               category=category, subtitle_style="dynamic", template="story_explainer",
+                               seconds=60)  # user preference: close to one minute
         available = profiles.listing(self.config)
         payload = {**defaults.model_dump(), "articles": articles or [], "evidence": [], "script": None,
                    "voice": self.config.voice, "voice_profile_id": "reels-natural-sohee" if any(
@@ -156,7 +157,7 @@ class SubmissionQueue:
             draft.setdefault("previous_outputs", []).append(
                 {"job_id": row["job_id"], "youtube_url": row["youtube_url"], "rebuilt_at": datetime.now(UTC).isoformat()})
             # A new revision keeps the old job (and its YouTube upload record) untouched.
-            draft.update(script=None, latest_job_id=None, status="failed", error=None,
+            draft.update(script=None, latest_job_id=None, status="failed", error=None, seconds=60,
                          approved_revision=None, content_review=None, content_warnings=[])
             draft["revision"] += 1
             studio_store.save(self.config, draft, expected)

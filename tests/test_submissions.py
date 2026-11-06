@@ -359,3 +359,9 @@ def test_daily_upload_limit_waits_and_retries_automatically_later(system, monkey
     manager.pool.drain()
     done = queue.get(first["id"])
     assert done["status"] == "completed" and len(renders) == 1  # same finished video, uploaded later
+
+
+def test_new_and_rebuilt_submissions_target_one_minute(system):
+    config, _manager, _youtube, queue, _renders = system
+    first = queue.create("https://example.org/a")
+    assert studio_store.get(config, queue.get(first["id"])["draft_id"])["seconds"] == 60

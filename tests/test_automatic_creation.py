@@ -455,3 +455,12 @@ def test_long_photo_queries_fall_back_to_two_word_subjects():
     scene = Scene(headline='약국', narration='약국 진열대 이야기를 해요.', visual_query='약국 진열대 / pharmacy shelf weight loss pills')
     assert discovery.query_variants(scene, 'health') == [
         'pharmacy shelf weight loss pills', 'pharmacy shelf', 'loss pills', 'pharmacy medicine shelf']
+
+
+def test_one_minute_drafts_take_up_to_eight_excerpts_from_the_article(monkeypatch):
+    monkeypatch.setattr(automatic, 'discover', lambda query: [])
+    lines = [f'주택 공급 계획의 {n}번째 세부 내용은 이렇게 설명되어 있다고 정부가 밝혔습니다.' for n in range(10)]
+    article = {**page(), 'url': 'https://blog.example.org/post', 'lines': lines}
+    short, _ = automatic.gather({'source_url': article['url'], 'category': 'trending', 'topic': '주택 공급', 'articles': [], 'evidence': [], 'seconds': 30}, article)
+    long, _ = automatic.gather({'source_url': article['url'], 'category': 'trending', 'topic': '주택 공급', 'articles': [], 'evidence': [], 'seconds': 60}, article)
+    assert len(short) == 4 and len(long) == 8
