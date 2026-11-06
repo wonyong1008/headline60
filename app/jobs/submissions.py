@@ -1,4 +1,5 @@
 """Durable URL inbox, drained by the existing single production worker."""
+import json
 import os
 import re
 import subprocess
@@ -58,7 +59,17 @@ class SubmissionQueue:
 
     def listing(self) -> list[dict]:
         with store.connect(self.config) as db:
-            return [dict(row) for row in db.execute("SELECT * FROM submissions ORDER BY sequence")]
+            rows = [dict(row) for row in db.execute("SELECT * FROM submissions ORDER BY sequence")]
+        for row in rows:
+            # Visibility YouTube actually applied (from the upload record), shown next to the link.
+            row["youtube_privacy"] = None
+            if row["youtube_url"] and row["job_id"]:
+                try:
+                    record = json.loads((job_folder(self.config, row["job_id"]) / "youtube-upload.json").read_text())
+                    row["youtube_privacy"] = record.get("privacy")
+                except (OSError, ValueError):
+                    pass
+        return rows
 
     def get(self, key: str) -> dict:
         with store.connect(self.config) as db:
@@ -135,7 +146,7 @@ class SubmissionQueue:
             return result
 
     def rebuild(self, key: str) -> dict:
-        """Make a fresh script/video for a finished item and upload it as a new private video."""
+        """Make a fresh script/video for a finished item and upload it as a new video."""
         with self.lock:
             row = self.get(key)
             if row["status"] != "completed" or not row["draft_id"]:
@@ -293,7 +304,5 @@ class SubmissionQueue:
             self._update(key, status="needs_auth", stage="youtube_upload", error="YouTube 계정을 연결하면 완성 영상을 업로드합니다.")
             return
         result = self.youtube.upload(job_folder(self.config, job_id))
-        if result.get("privacy") != "private":
-            raise RuntimeError("자동 제작 영상은 비공개 업로드만 허용합니다.")
         # Check results stay in the draft data only; the user judges content and is not shown memos.
         self._update(key, status="completed", stage="completed", youtube_url=result["url"], error=None)

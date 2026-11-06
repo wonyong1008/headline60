@@ -1,6 +1,6 @@
 # YouTube 업로드 연결
 
-HEADLINE 60은 완성·검증된 영상(`ffprobe.json`이 있는 `output.mp4`)만 YouTube Data API v3로 업로드한다. **공개 범위는 항상 `private`** 이며 코드에서 바꿀 수 없다. 공개 전환은 사람이 YouTube Studio에서 내용을 확인한 뒤 직접 한다.
+HEADLINE 60은 완성·검증된 영상(`ffprobe.json`이 있는 `output.mp4`)만 YouTube Data API v3로 업로드한다. 공개 범위는 `.env`의 `HEADLINE_YOUTUBE_PRIVACY`(`private` 기본 / `unlisted` / `public`)로 정한다. 업로드 후 YouTube가 실제 적용한 공개 범위를 다시 조회해 기록하고 목록에 표시한다(감사 전 API 프로젝트는 YouTube가 비공개로 강제할 수 있다). 현재 이 PC 설정은 사용자 요청으로 `public`이다.
 
 ## 최초 연결
 

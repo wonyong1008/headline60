@@ -1,4 +1,4 @@
-"""Local desktop OAuth and resumable private YouTube uploads; no credentials in APIs."""
+"""Local desktop OAuth and resumable YouTube uploads (visibility from settings); no credentials in APIs."""
 import base64
 import fcntl
 import hashlib
@@ -70,7 +70,7 @@ def session_url(url: str) -> str:
     return url
 
 
-def video_metadata(folder: Path) -> dict:
+def video_metadata(folder: Path, privacy: str = 'private') -> dict:
     script = read_json(folder / 'script.json')
     metadata = read_json(folder / 'metadata.json')
     title = str(script.get('title', '')).strip()
@@ -87,7 +87,7 @@ def video_metadata(folder: Path) -> dict:
         raise ValueError('전체 대본과 필수 출처가 설명 5,000자 제한을 넘습니다. 대본·출처 표시를 정리하세요.')
     return {'snippet': {'title': title, 'description': description, 'categoryId': '25',
                         'defaultLanguage': 'ko', 'tags': [str(t).lstrip('#') for t in script.get('hashtags', [])][:12]},
-            'status': {'privacyStatus': 'private', 'selfDeclaredMadeForKids': False, 'containsSyntheticMedia': True}}
+            'status': {'privacyStatus': privacy, 'selfDeclaredMadeForKids': False, 'containsSyntheticMedia': True}}
 
 
 class YoutubeService:
@@ -122,7 +122,7 @@ class YoutubeService:
         token = read_json(self.root / 'token.json')
         return {'client_configured': bool(read_json(self.root / 'client.json').get('installed')),
                 'connected': bool(token.get('refresh_token')) and not token.get('invalid', False),
-                'channel': token.get('channel'), 'privacy': 'private', 'error': self.last_error,
+                'channel': token.get('channel'), 'privacy': self.config.youtube_privacy, 'error': self.last_error,
                 'authorizing': bool(self.pending and self.pending['expires'] > time.time())}
 
     def begin(self) -> dict:
@@ -239,7 +239,7 @@ class YoutubeService:
         if record.get('video_id'):
             self._thumbnail(folder, record)
             return {key: record.get(key) for key in ('video_id', 'url', 'privacy', 'thumbnail_status')}
-        payload = video_metadata(folder)
+        payload = video_metadata(folder, self.config.youtube_privacy)
         current_hash, total = file_digest(path), path.stat().st_size
         if record.get('sha256') and record['sha256'] != current_hash:
             raise ValueError('업로드 중인 원본 영상이 변경되었습니다.')
@@ -258,7 +258,8 @@ class YoutubeService:
             if not record.get('session_url') and not record.get('video_id'):
                 response = checked(http.post(UPLOAD_URL, params={'uploadType': 'resumable', 'part': 'snippet,status'},
                     headers={**headers, 'X-Upload-Content-Type': 'video/mp4', 'X-Upload-Content-Length': str(total)}, json=payload), (200, 201))
-                record.update(session_url=session_url(response.headers['location']), offset=0, sha256=current_hash)
+                record.update(session_url=session_url(response.headers['location']), offset=0, sha256=current_hash,
+                              requested_privacy=payload['status']['privacyStatus'])
                 private_json(journal, record)
             with path.open('rb') as video:
                 while not record.get('video_id'):
@@ -282,10 +283,22 @@ class YoutubeService:
         video_id = record.get('video_id', '')
         if not re.fullmatch(r'[A-Za-z0-9_-]{6,40}', video_id):
             raise RuntimeError('YouTube가 유효한 영상 ID를 반환하지 않았습니다.')
-        record.update(url='https://www.youtube.com/watch?v=' + video_id, privacy='private', uploaded_at=time.time())
+        record.update(url='https://www.youtube.com/watch?v=' + video_id, uploaded_at=time.time(),
+                      privacy=self._actual_privacy(video_id, record.get('requested_privacy') or self.config.youtube_privacy))
         private_json(journal, record)
         self._thumbnail(folder, record)
         return {key: record.get(key) for key in ('video_id', 'url', 'privacy', 'thumbnail_status')}
+
+    def _actual_privacy(self, video_id: str, requested: str) -> str:
+        """Record what YouTube applied: unaudited API projects may force uploads to private."""
+        try:
+            with httpx.Client(timeout=30, trust_env=False) as http:
+                items = checked(http.get('https://www.googleapis.com/youtube/v3/videos',
+                    params={'part': 'status', 'id': video_id},
+                    headers={'Authorization': 'Bearer ' + self.access_token()})).json().get('items', [])
+            return items[0]['status']['privacyStatus'] if items else requested
+        except (httpx.HTTPError, RuntimeError, KeyError, IndexError, ValueError):
+            return requested
 
     def _verify_channel(self, http, headers) -> None:
         """Check the live account before every upload so a personal channel is never used."""

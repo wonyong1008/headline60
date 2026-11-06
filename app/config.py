@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import field_validator
@@ -23,6 +24,8 @@ class Settings(BaseSettings):
     allowed_hosts: list[str] = []
     # Uploads are refused unless the authorized account owns exactly this channel (when set).
     youtube_channel_id: str = ""
+    # Visibility for automatic uploads: private (default), unlisted or public.
+    youtube_privacy: Literal["private", "unlisted", "public"] = "private"
     font: Path = Path("/System/Library/Fonts/AppleSDGothicNeo.ttc")
     root: Path = ROOT
     tts_profile: dict | None = None

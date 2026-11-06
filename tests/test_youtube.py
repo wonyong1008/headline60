@@ -68,6 +68,8 @@ def test_resumable_chunks_and_duplicate_retry_do_not_insert_twice(service, video
     monkeypatch.setattr(youtube, 'CHUNK_BYTES', 4)
     def respond(request):
         calls.append(request)
+        if request.method == 'GET' and request.url.path.endswith('/videos'):
+            return httpx.Response(200, json={'items': [{'status': {'privacyStatus': 'private'}}]})
         if request.url.path.endswith('/channels'):
             return httpx.Response(200, json={'items': [{'id': 'UCexample'}]})
         if request.url.path.endswith('/thumbnails/set'):
@@ -107,6 +109,8 @@ def test_unknown_final_response_checks_existing_session_before_new_upload(servic
         service.upload(video)
     def recovered(request):
         attempts.append(request)
+        if request.method == 'GET' and request.url.path.endswith('/videos'):
+            return httpx.Response(200, json={'items': [{'status': {'privacyStatus': 'private'}}]})
         if request.url.path.endswith('/channels'):
             return httpx.Response(200, json={'items': [{'id': 'UCexample'}]})
         if request.url.path.endswith('/thumbnails/set'):
@@ -119,7 +123,7 @@ def test_unknown_final_response_checks_existing_session_before_new_upload(servic
     mock_client(monkeypatch, recovered)
     result = service.upload(video)
     assert result['video_id'] == 'existing1234' and len(initialized) == 1
-    assert not any(r.url.path.endswith('/videos') for r in attempts)
+    assert not any(r.method == 'POST' and r.url.path.endswith('/videos') for r in attempts)  # no new insert
     assert original is not None
 
 
@@ -181,3 +185,27 @@ def test_concurrent_upload_calls_for_one_job_create_one_video(service, video, mo
     [t.start() for t in threads]
     [t.join() for t in threads]
     assert results == ['single12345', 'single12345'] and len(inserted) == 1
+
+
+@pytest.mark.parametrize('setting, applied', [('public', 'public'), ('public', 'private'), ('unlisted', 'unlisted')])
+def test_upload_uses_configured_visibility_and_records_what_youtube_applied(tmp_path, video, monkeypatch, setting, applied):
+    service = youtube.YoutubeService(Settings(root=tmp_path, youtube_channel_id='', youtube_privacy=setting))
+    service.configure({'installed': {'client_id': 'local-test.apps.googleusercontent.com', 'client_secret': 'unit-test-secret'}})
+    youtube.private_json(service.root / 'token.json', {'refresh_token': 'r', 'access_token': 'a',
+        'expires_at': time.time() + 3600, 'channel': {'id': 'UCexample', 'title': 'Test Channel'}})
+    sent = {}
+    def respond(request):
+        if request.url.path.endswith('/channels'):
+            return httpx.Response(200, json={'items': [{'id': 'UCexample'}]})
+        if request.url.path.endswith('/thumbnails/set'):
+            return httpx.Response(200, json={})
+        if request.method == 'GET' and request.url.path.endswith('/videos'):
+            return httpx.Response(200, json={'items': [{'status': {'privacyStatus': applied}}]})
+        if request.method == 'POST':
+            sent['privacy'] = json.loads(request.content)['status']['privacyStatus']
+            return httpx.Response(200, headers={'location': 'https://www.googleapis.com/upload/session?upload_id=v'})
+        return httpx.Response(201, json={'id': 'visible1234'})
+    mock_client(monkeypatch, respond)
+    result = service.upload(video)
+    assert sent['privacy'] == setting and result['privacy'] == applied
+    assert service.status()['privacy'] == setting
