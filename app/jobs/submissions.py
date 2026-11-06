@@ -130,6 +130,27 @@ class SubmissionQueue:
             self.start()
             return result
 
+    def rebuild(self, key: str) -> dict:
+        """Make a fresh script/video for a finished item and upload it as a new private video."""
+        with self.lock:
+            row = self.get(key)
+            if row["status"] != "completed" or not row["draft_id"]:
+                raise ValueError("완료된 항목만 다시 만들 수 있습니다.")
+            draft = studio_store.get(self.config, row["draft_id"])
+            expected = draft["revision"]
+            draft.setdefault("previous_outputs", []).append(
+                {"job_id": row["job_id"], "youtube_url": row["youtube_url"], "rebuilt_at": datetime.now(UTC).isoformat()})
+            # A new revision keeps the old job (and its YouTube upload record) untouched.
+            draft.update(script=None, latest_job_id=None, status="failed", error=None,
+                         approved_revision=None, content_review=None, content_warnings=[])
+            draft["revision"] += 1
+            studio_store.save(self.config, draft, expected)
+            with store.connect(self.config) as db:
+                db.execute("UPDATE submissions SET job_id=NULL, youtube_url=NULL WHERE id=?", (key,))
+            result = self._update(key, status="queued", stage="queued", error=None)
+            self.start()
+            return result
+
     def cancel(self, key: str) -> dict:
         with self.lock:
             if self.get(key)["status"] != "queued":
@@ -254,6 +275,5 @@ class SubmissionQueue:
         result = self.youtube.upload(job_folder(self.config, job_id))
         if result.get("privacy") != "private":
             raise RuntimeError("자동 제작 영상은 비공개 업로드만 허용합니다.")
-        warnings = studio_store.get(self.config, draft["id"]).get("content_warnings") or []
-        self._update(key, status="completed", stage="completed", youtube_url=result["url"],
-                     error=("검토 메모(공개 전 확인): " + "; ".join(warnings))[:1500] if warnings else None)
+        # Check results stay in the draft data only; the user judges content and is not shown memos.
+        self._update(key, status="completed", stage="completed", youtube_url=result["url"], error=None)

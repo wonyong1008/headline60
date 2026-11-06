@@ -14,7 +14,24 @@ from app.process import save_json
 from app.renderer.storyboard import select_visual
 
 LICENSE_URLS = {'CC0': 'https://creativecommons.org/publicdomain/zero/1.0/',
-                'CC-BY-4.0': 'https://creativecommons.org/licenses/by/4.0/'}
+                'CC-BY-4.0': 'https://creativecommons.org/licenses/by/4.0/',
+                'CC-BY-SA-4.0': 'https://creativecommons.org/licenses/by-sa/4.0/',
+                'CC-BY-3.0': 'https://creativecommons.org/licenses/by/3.0/',
+                'CC-BY-SA-3.0': 'https://creativecommons.org/licenses/by-sa/3.0/',
+                'CC-BY-2.0': 'https://creativecommons.org/licenses/by/2.0/',
+                'CC-BY-SA-2.0': 'https://creativecommons.org/licenses/by-sa/2.0/'}
+# When a scene's own search finds nothing, a topic-level photo still beats a plain graphic.
+CATEGORY_QUERIES = {'realestate': 'apartment buildings Seoul', 'economy': 'stock exchange trading screen',
+                    'auto': 'cars parking lot', 'health': 'pharmacy medicine shelf',
+                    'trending': 'Seoul city street', 'tech': 'smartphone'}
+# Backgrounds must be photographs; diagrams, maps and logos read as clutter behind text.
+NOT_PHOTO = re.compile(r'chart|graph|diagram|\bmaps?\b|logo|icon|screenshot|comparison|table|\bplot|infographic|'
+                       r'\bflag|coat of arms|\bseal\b|drawing|illustration|poster|document|\bscan|cartoon|sketch', re.IGNORECASE)
+GRIM = re.compile(r'crash|accident|burn|destroy|wreck|\bdead|corpse|blood|\bwar\b|memorial|funeral|\bfire\b|protest|riot', re.IGNORECASE)
+ABSTRACT = {'price', 'prices', 'decline', 'drop', 'rise', 'fall', 'increase', 'decrease', 'market', 'markets', 'comparison',
+            'competition', 'policy', 'regulation', 'growth', 'trend', 'crisis', 'pressure', 'economy', 'cost', 'costs',
+            'value', 'rate', 'rates', 'analysis', 'impact', 'effect', 'concept', 'news', 'issue', 'problem', 'risk'}
+DOWNLOAD_HOSTS = {'upload.wikimedia.org', 'thumb.wikimedia.org'}
 EXPLICIT = re.compile(r'nud[ei]|naked|porn|sexual intercourse|genital|penis|vulva|vagina|masturbat|노출|성기|나체', re.IGNORECASE)
 
 
@@ -23,6 +40,11 @@ def plain(text: str) -> str:
 
 
 def query_for(scene) -> str:
+    # The writer supplies '한국어 / english stock photo query'; Commons search works far better in English.
+    if ' / ' in scene.visual_query:
+        english = scene.visual_query.split(' / ', 1)[1].strip()
+        if re.search(r'[a-z]{3,}', english, re.IGNORECASE):
+            return english[:80]
     text = f'{scene.visual_query} {scene.headline} {scene.narration}'
     for pattern, query in [(r'케겔|발기|정력|운동|건강', 'exercise equipment gym'),
                            (r'아파트|주택|부동산', 'South Korea apartment buildings'),
@@ -35,7 +57,7 @@ def query_for(scene) -> str:
 
 def search(query: str) -> list[dict]:
     params = {'action': 'query', 'format': 'json', 'generator': 'search', 'gsrsearch': query + ' -filetype:svg -intitle:nude',
-              'gsrnamespace': 6, 'gsrlimit': 5, 'prop': 'imageinfo', 'iiprop': 'url|extmetadata|size', 'iiurlwidth': 960}
+              'gsrnamespace': 6, 'gsrlimit': 15, 'prop': 'imageinfo', 'iiprop': 'url|extmetadata|size', 'iiurlwidth': 960}
     _, data, _ = fetch_public('https://commons.wikimedia.org/w/api.php?' + urlencode(params),
                               hosts={'commons.wikimedia.org'})
     response = json.loads(data)
@@ -49,6 +71,8 @@ def search(query: str) -> list[dict]:
         description = value('ImageDescription')
         if not license_type or not author or EXPLICIT.search(name + ' ' + description):
             continue
+        if NOT_PHOTO.search(name) or GRIM.search(name + ' ' + description):
+            continue
         if meta.get('NonFree', {}).get('value') == 'true' or value('Restrictions'):
             continue
         # Search relevance remains required even when the license is acceptable.
@@ -57,7 +81,7 @@ def search(query: str) -> list[dict]:
         if min(info.get('width', 0), info.get('height', 0)) < 640:
             continue
         download = info.get('thumburl') or info.get('url', '')
-        if not re.search(r'\.(?:jpe?g|png|webp)(?:\?|$)', download, re.IGNORECASE):
+        if not re.search(r'\.jpe?g(?:\?|$)', download, re.IGNORECASE):  # photos, not PNG graphics
             continue
         results.append({'name': name[:180], 'author': author[:500], 'source_url': info.get('descriptionurl', ''),
                         'download_url': download, 'license_type': license_type, 'license_url': LICENSE_URLS[license_type],
@@ -65,40 +89,69 @@ def search(query: str) -> list[dict]:
     return results
 
 
+def query_variants(scene, category: str) -> list[str]:
+    """Scene query, then the same without abstract words, then a topic-level photo."""
+    first = query_for(scene)
+    concrete = ' '.join(w for w in first.split() if w.lower() not in ABSTRACT)
+    return list(dict.fromkeys(q for q in (first, concrete, CATEGORY_QUERIES.get(category, CATEGORY_QUERIES['trending'])) if q))
+
+
 def ensure_media(config: Settings, script, category: str) -> dict:
+    """Give every scene its own licensed photo where possible and pin it to that scene."""
     started, imported, errors, searched = time.perf_counter(), [], [], set()
     assets = [a for a in listing(config) if a['category'] == category and a['usage_status'] == 'approved'
-              and a['media_type'] in {'image', 'video'}]
+              and a['media_type'] in {'image', 'video'} and not NOT_PHOTO.search(a.get('name', ''))]
+    results, used, offline = {}, set(), False
     for index, scene in enumerate(script.scenes):
-        if scene.asset_id or scene.chart or scene.visual_type == 'data_chart' or select_visual(scene, assets, index):
+        if scene.asset_id or scene.chart or scene.visual_type == 'data_chart':
             continue
-        query = query_for(scene)
-        if not query or query in searched or len(searched) >= 2 or time.perf_counter() - started > 22:
+        match = select_visual(scene, [a for a in assets if a['asset_id'] not in used], 0)
+        if match:
+            used.add(match['asset_id'])
+            scene.asset_id = match['asset_id']
             continue
-        searched.add(query)
-        try:
-            for candidate in search(query):
+        for query in query_variants(scene, category):
+            if offline or len(searched) >= 8 or time.perf_counter() - started > 60:
+                break
+            if query not in results:
+                searched.add(query)
+                try:
+                    results[query] = search(query)
+                except (httpx.HTTPError, OSError, ValueError, KeyError) as exc:
+                    errors.append(str(exc)[:200])
+                    results[query] = []
+                    offline = isinstance(exc, httpx.TransportError)  # stop instead of retrying every scene
+                    continue
+            asset = None
+            for candidate in results[query]:
                 previous = next((a for a in listing(config) if a['source_url'] == candidate['source_url']), None)
                 if previous:
-                    if previous['category'] == category:
-                        assets.append(previous)
+                    if previous['category'] == category and previous['asset_id'] not in used:
+                        asset = previous
+                        break
                     continue
-                final, content, content_type = fetch_public(candidate['download_url'], limit=12 * 1024**2,
-                                                            hosts={'upload.wikimedia.org'})
-                if not content_type.startswith('image/'):
+                try:
+                    final, content, content_type = fetch_public(candidate['download_url'], limit=12 * 1024**2,
+                                                                hosts=DOWNLOAD_HOSTS)
+                    if not content_type.startswith('image/'):
+                        continue
+                    asset = register_upload(config, content, name=candidate['name'], category=category,
+                        license_type=candidate['license_type'], source_url=candidate['source_url'],
+                        license_url=candidate['license_url'], rights_confirmed=True,
+                        attribution=f"{candidate['author']} · {candidate['source_url']} · {candidate['license_type']} · 변경: 세로 크롭·색상/자막 합성",
+                        tags=[t[:60] for t in dict.fromkeys(terms(scene.visual_query)[:12] + terms(scene.headline)[:6] + terms(query)[:8])][:24],
+                        description='자동 검색 자료화면 · 실제 사건·특정인의 건강 상태를 나타내지 않음. ' + candidate['description'][:300],
+                        rights_basis='license_metadata')
+                except (httpx.HTTPError, OSError, ValueError, KeyError, RuntimeError) as exc:
+                    errors.append(str(exc)[:200])  # one bad file never stops the others
                     continue
-                asset = register_upload(config, content, name=candidate['name'], category=category,
-                    license_type=candidate['license_type'], source_url=candidate['source_url'],
-                    license_url=candidate['license_url'], rights_confirmed=True,
-                    attribution=f"{candidate['author']} · {candidate['source_url']} · {candidate['license_type']} · 변경: 세로 크롭·색상/자막 합성",
-                    tags=terms(scene.visual_query)[:12] + terms(query)[:8],
-                    description='자동 검색 자료화면 · 실제 사건·특정인의 건강 상태를 나타내지 않음. ' + candidate['description'][:300],
-                    rights_basis='license_metadata')
                 assets.append(asset)
                 imported.append({'asset_id': asset['asset_id'], **candidate, 'download_url': final})
                 break
-        except (httpx.HTTPError, OSError, ValueError, KeyError, RuntimeError) as exc:
-            errors.append(str(exc)[:200])
+            if asset:
+                used.add(asset['asset_id'])
+                scene.asset_id = asset['asset_id']
+                break
     result = {'imported': imported, 'queries': sorted(searched), 'errors': errors,
               'seconds': round(time.perf_counter() - started, 3),
               'notice': '라이선스와 저작자 메타데이터가 확인된 자료만 가져옵니다. 실패 시 기존 관련 자료 또는 브랜드 그래픽을 사용합니다.'}

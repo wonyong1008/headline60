@@ -416,7 +416,7 @@ function submissionRow(row, position) {
   const status=submissionLabels[row.status]||row.status;
   const stage=submissionStages[row.stage]||row.stage||'';
   const retry=['failed','needs_auth','needs_review','cancelled'].includes(row.status);
-  return `<tr data-submission="${esc(row.id)}"><td class="submission-order">${row.status==='queued'?`<strong>${position}</strong>`:['preparing','rendering','uploading'].includes(row.status)?'<span class="submission-active">진행 중</span>':'—'}<small>등록 #${esc(row.sequence)}</small></td><td class="submission-title"><strong>${esc(row.title||'제목 확인 중')}</strong>${url?`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`:''}<small>${row.anchor_id?'아나운서 포함 · 실험':'아나운서 미포함'} · ${esc(formatDate(row.created_at))}</small></td><td><span class="badge ${row.status==='completed'?'ok':''} ${row.status==='failed'?'submission-failed':''}">${esc(status)}</span>${stage&&stage!==status?`<small>${esc(stage)}</small>`:''}${row.error?`<details class="submission-error"><summary>상세 내용</summary><p>${esc(row.error)}</p></details>`:''}${row.status==='needs_auth'?'<a href="/settings">YouTube 연결 →</a>':''}${row.status==='needs_review'&&row.draft_id?`<a href="/studio?draft=${encodeURIComponent(row.draft_id)}">대본 확인 →</a>`:''}</td><td>${canPreview?`<button type="button" class="secondary" data-submission-preview="${esc(row.id)}">미리보기</button>`:'<span class="muted">준비 중</span>'}</td><td>${youtube?`<a href="${esc(youtube)}" target="_blank" rel="noopener noreferrer">영상 열기 ↗</a><small>비공개</small>`:'—'}</td><td>${retry?`<button type="button" class="secondary" data-submission-retry="${esc(row.id)}">다시 시도</button>`:'—'}</td></tr>`;
+  return `<tr data-submission="${esc(row.id)}"><td class="submission-order">${row.status==='queued'?`<strong>${position}</strong>`:['preparing','rendering','uploading'].includes(row.status)?'<span class="submission-active">진행 중</span>':'—'}<small>등록 #${esc(row.sequence)}</small></td><td class="submission-title"><strong>${esc(row.title||'제목 확인 중')}</strong>${url?`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`:''}<small>${row.anchor_id?'아나운서 포함 · 실험':'아나운서 미포함'} · ${esc(formatDate(row.created_at))}</small></td><td><span class="badge ${row.status==='completed'?'ok':''} ${row.status==='failed'?'submission-failed':''}">${esc(status)}</span>${stage&&stage!==status?`<small>${esc(stage)}</small>`:''}${row.error?`<details class="submission-error"><summary>상세 내용</summary><p>${esc(row.error)}</p></details>`:''}${row.status==='needs_auth'?'<a href="/settings">YouTube 연결 →</a>':''}${row.status==='needs_review'&&row.draft_id?`<a href="/studio?draft=${encodeURIComponent(row.draft_id)}">대본 확인 →</a>`:''}</td><td>${canPreview?`<button type="button" class="secondary" data-submission-preview="${esc(row.id)}">미리보기</button>`:'<span class="muted">준비 중</span>'}</td><td>${youtube?`<a href="${esc(youtube)}" target="_blank" rel="noopener noreferrer">영상 열기 ↗</a><small>비공개</small>`:'—'}</td><td>${retry?`<button type="button" class="secondary" data-submission-retry="${esc(row.id)}">다시 시도</button>`:row.status==='completed'?`<button type="button" class="secondary" data-submission-rebuild="${esc(row.id)}">다시 만들기</button>`:'—'}</td></tr>`;
 }
 async function refreshSubmissions() {
   if(submissionRefreshing)return;
@@ -468,7 +468,13 @@ async function submissionPage() {
     finally { button.disabled=false;button.textContent='등록'; }
   });
   $('submission-list').addEventListener('click',async event=>{
-    const retry=event.target.closest('[data-submission-retry]'),preview=event.target.closest('[data-submission-preview]');
+    const retry=event.target.closest('[data-submission-retry]'),preview=event.target.closest('[data-submission-preview]'),rebuild=event.target.closest('[data-submission-rebuild]');
+    if(rebuild){
+      if(rebuild.disabled||!confirm('대본과 영상을 새로 만들어 새 비공개 영상으로 올립니다. 기존 YouTube 영상은 그대로 남습니다. 진행할까요?'))return;rebuild.disabled=true;
+      try {await api(`/api/submissions/${encodeURIComponent(rebuild.dataset.submissionRebuild)}/rebuild`,'POST');notice('다시 만들기를 등록했습니다.');await refreshSubmissions();}
+      catch(error){notice(error.message,true);}finally{rebuild.disabled=false;}
+      return;
+    }
     if(retry){
       if(retry.disabled)return;retry.disabled=true;
       try {await api(`/api/submissions/${encodeURIComponent(retry.dataset.submissionRetry)}/retry`,'POST');notice('다시 시도하도록 등록했습니다.');await refreshSubmissions();}

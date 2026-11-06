@@ -26,6 +26,7 @@ class Shot(BaseModel):
     narration: str = Field(min_length=8, max_length=100)
     source: int = Field(ge=0)
     visual_query: str = Field(min_length=2, max_length=60)
+    visual_en: str = Field(min_length=3, max_length=60)
 
 
 class Story(BaseModel):
@@ -182,7 +183,7 @@ Hook→핵심 사실→다른 사실/적용 조건→한 줄 결론으로 이어
 source_outline는 원문에 소개된 항목 이름이다. 이 항목들을 적어도 한 장면에 자연스럽게 포함해 입력 글의 구체적 내용을 요약한다. 항목 이름만으로 효과를 입증하지 않는다. facts 자료가 뒷받침하는 일반적 이점과 특정 운동의 치료 효과는 구분한다.
 수치가 들어간 문장은 원문 구절의 대상·기간·단위를 그대로 옮긴다('씩', '추가', '기준' 같은 말을 새로 붙이거나 다른 수치와 섞지 마라).
 과거 발표를 현재 뉴스처럼 표현하지 마라. 날짜는 필요할 때만 쓰고 월까지만 있는 자료에 일을 만들지 마라.
-장면 2부터는 자료 하나(source)의 내용만 1~2문장으로 바꿔 말한다. 한 장면에 다른 자료의 수치를 섞지 마라. 각 scene.source는 그 자료의 source 정수이다. visual_query는 설명과 어울리는 비노골적인 실제 촬영 대상이다.
+장면 2부터는 자료 하나(source)의 내용만 1~2문장으로 바꿔 말한다. 한 장면에 다른 자료의 수치를 섞지 마라. 각 scene.source는 그 자료의 source 정수이다. visual_query는 설명과 어울리는 비노골적인 실제 촬영 대상이고, visual_en은 같은 대상을 무료 사진 검색용 영어 2~4단어로 쓴다. 가격·하락·시장·경쟁 같은 추상어가 아니라 카메라로 찍을 수 있는 구체적 사물·장소여야 한다(예: 'used car lot', 'smartphone in hand', 'stock exchange floor', 'pharmacy shelf'). 장면마다 다른 대상을 고르고, 인물 실명·로고는 넣지 않는다.
 영어 자료는 정확히 한국어로 설명하라. 한자/영어 문장을 섞거나 문장을 중간에 끊지 마라.
 검증할 수 없는 건강 효과는 생략하고 확인된 범위와 한계를 설명한다.
 자료: {json.dumps(material, ensure_ascii=False)}'''
@@ -244,7 +245,7 @@ def _attempt(draft, config, evidence, count, schema, prompt, attempt):
                 shot.narration, shot.headline = tighten(shot.narration, shot.headline, evidence[shot.source], 75 if count == 4 else 70)
             refs = [evidence[j].id for j in _relink(numeric_tokens(shot.narration + ' ' + shot.headline), shot.source, evidence)]
             scenes.append(Scene(headline=shot.headline, headline_text=shot.headline, narration=shot.narration,
-                subtitle=shot.narration, visual_query=shot.visual_query, claim_ids=refs, source_refs=refs,
+                subtitle=shot.narration, visual_query=f'{shot.visual_query} / {shot.visual_en}'[:150], claim_ids=refs, source_refs=refs,
                 scene_id=f'scene-{i + 1:02}', visual_type='stock_image',
                 duration_seconds=3 if i == 0 else round((draft['seconds'] - 3) / (count - 1), 2),
                 story_role='hook' if i == 0 else 'conclusion' if i == count - 1 else 'context' if i == 1 else 'meaning' if i == count - 2 else 'fact',

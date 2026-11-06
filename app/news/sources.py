@@ -11,7 +11,7 @@ import httpx
 
 from app.news.feeds import NewsError, public_url
 
-USER_AGENT = 'Headline60/0.3 (local editorial research)'
+USER_AGENT = 'Headline60/0.4 (+https://github.com/wonyong1008/headline60; local editorial research)'
 VOID = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'wbr'}
 
 

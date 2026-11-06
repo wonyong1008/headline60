@@ -168,10 +168,10 @@ def test_compact_model_contract_reuses_script_and_real_source_ids(monkeypatch):
     from app.llm import automatic_writer
     source = automatic.excerpts(page(), '주택 공급')[0]
     response = {'title': '주택 공급 계획 읽는 법', 'scenes': [
-        {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까요?', 'source': 0, 'visual_query': '아파트 전경'},
-        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지'},
-        {'headline': '계획의 의미', 'narration': '발표된 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어요.', 'source': 0, 'visual_query': '주택 건설'},
-        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이에요.', 'source': 0, 'visual_query': '아파트 전경'}]}
+        {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까요?', 'source': 0, 'visual_query': '아파트 전경', 'visual_en': 'apartment buildings'},
+        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지', 'visual_en': 'apartment buildings'},
+        {'headline': '계획의 의미', 'narration': '발표된 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어요.', 'source': 0, 'visual_query': '주택 건설', 'visual_en': 'apartment buildings'},
+        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이에요.', 'source': 0, 'visual_query': '아파트 전경', 'visual_en': 'apartment buildings'}]}
     original = httpx.Client
     requests = []
     def respond(request):
@@ -259,12 +259,12 @@ def test_writer_retries_with_feedback_at_most_three_times_and_trims_hook(monkeyp
     source = automatic.excerpts(page(), '주택 공급')[0]
     long_scene = '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이며 그 차이를 하나하나 짚어 보는 일이 필요하다고 볼 수 있어요.'
     bad = {'title': '주택 공급', 'scenes': [
-        {'headline': f'헤드라인{i}', 'narration': long_scene, 'source': 0, 'visual_query': '아파트'} for i in range(4)]}
+        {'headline': f'헤드라인{i}', 'narration': long_scene, 'source': 0, 'visual_query': '아파트', 'visual_en': 'apartment buildings'} for i in range(4)]}
     good = {'title': '주택 공급 계획 읽는 법', 'scenes': [
-        {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까요? 계획과 실적의 차이를 함께 살펴보는 것이 이번 자료를 읽는 순서예요.', 'source': 0, 'visual_query': '아파트 전경'},
-        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지'},
-        {'headline': '계획의 의미', 'narration': '발표된 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어요.', 'source': 0, 'visual_query': '주택 건설'},
-        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이에요.', 'source': 0, 'visual_query': '아파트 전경'}]}
+        {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까요? 계획과 실적의 차이를 함께 살펴보는 것이 이번 자료를 읽는 순서예요.', 'source': 0, 'visual_query': '아파트 전경', 'visual_en': 'apartment buildings'},
+        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지', 'visual_en': 'apartment buildings'},
+        {'headline': '계획의 의미', 'narration': '발표된 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어요.', 'source': 0, 'visual_query': '주택 건설', 'visual_en': 'apartment buildings'},
+        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이에요.', 'source': 0, 'visual_query': '아파트 전경', 'visual_en': 'apartment buildings'}]}
     original, prompts = httpx.Client, []
     def respond_with(answers):
         def respond(request):
@@ -307,10 +307,10 @@ def test_local_fact_check_rejection_triggers_bounded_retry(monkeypatch):
     from app.llm import automatic_writer
     source = automatic.excerpts(page(), '주택 공급')[0]
     good = {'title': '주택 공급 계획 읽는 법', 'scenes': [
-        {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까요?', 'source': 0, 'visual_query': '아파트 전경'},
-        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지'},
-        {'headline': '계획의 의미', 'narration': f'{date.today().year}년 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어요.', 'source': 0, 'visual_query': '주택 건설'},
-        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이에요.', 'source': 0, 'visual_query': '아파트 전경'}]}
+        {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까요?', 'source': 0, 'visual_query': '아파트 전경', 'visual_en': 'apartment buildings'},
+        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지', 'visual_en': 'apartment buildings'},
+        {'headline': '계획의 의미', 'narration': f'{date.today().year}년 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어요.', 'source': 0, 'visual_query': '주택 건설', 'visual_en': 'apartment buildings'},
+        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이에요.', 'source': 0, 'visual_query': '아파트 전경', 'visual_en': 'apartment buildings'}]}
     original, calls = httpx.Client, []
     def respond(request):
         body = json.loads(request.content)
@@ -354,10 +354,10 @@ def test_source_markers_are_stripped_and_long_hook_uses_article_headline(monkeyp
     from app.llm import automatic_writer
     source = automatic.excerpts(page(), '주택 공급')[0]
     story = {'title': '주택 공급 계획', 'scenes': [
-        {'headline': '계획과 입주 (source: 0)', 'narration': '정부가 도심 주택 공급 계획을 발표했고 이 자료는 계획을 설명하며 실제 입주 실적과는 구분해야 한다는 점을 강조했다 (source: 0)', 'source': 0, 'visual_query': '아파트'},
-        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지'},
-        {'headline': '계획의 의미', 'narration': '발표된 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어요.', 'source': 0, 'visual_query': '주택 건설'},
-        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이에요.', 'source': 0, 'visual_query': '아파트 전경'}]}
+        {'headline': '계획과 입주 (source: 0)', 'narration': '정부가 도심 주택 공급 계획을 발표했고 이 자료는 계획을 설명하며 실제 입주 실적과는 구분해야 한다는 점을 강조했다 (source: 0)', 'source': 0, 'visual_query': '아파트', 'visual_en': 'apartment buildings'},
+        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지', 'visual_en': 'apartment buildings'},
+        {'headline': '계획의 의미', 'narration': '발표된 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어요.', 'source': 0, 'visual_query': '주택 건설', 'visual_en': 'apartment buildings'},
+        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이에요.', 'source': 0, 'visual_query': '아파트 전경', 'visual_en': 'apartment buildings'}]}
     original = httpx.Client
     def respond(request):
         checking = 'checks' in json.loads(request.content)['format']['properties']
@@ -373,10 +373,10 @@ def test_casual_speech_level_is_not_a_rejection_reason(monkeypatch):
     from app.llm import automatic_writer
     source = automatic.excerpts(page(), '주택 공급')[0]
     story = {'title': '주택 공급 계획', 'scenes': [
-        {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까?', 'source': 0, 'visual_query': '아파트'},
-        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 게 먼저야.', 'source': 0, 'visual_query': '아파트 단지'},
-        {'headline': '계획의 의미', 'narration': '발표된 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어.', 'source': 0, 'visual_query': '주택 건설'},
-        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 게 이번 자료의 핵심이지.', 'source': 0, 'visual_query': '아파트 전경'}]}
+        {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까?', 'source': 0, 'visual_query': '아파트', 'visual_en': 'apartment buildings'},
+        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 게 먼저야.', 'source': 0, 'visual_query': '아파트 단지', 'visual_en': 'apartment buildings'},
+        {'headline': '계획의 의미', 'narration': '발표된 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어.', 'source': 0, 'visual_query': '주택 건설', 'visual_en': 'apartment buildings'},
+        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 게 이번 자료의 핵심이지.', 'source': 0, 'visual_query': '아파트 전경', 'visual_en': 'apartment buildings'}]}
     original = httpx.Client
     def respond(request):
         checking = 'checks' in json.loads(request.content)['format']['properties']
@@ -405,3 +405,45 @@ def test_article_body_with_br_paragraphs_and_unclosed_noscript_is_read():
     parser = SourceHTML()
     parser.feed(html)
     assert len(parser.container_lines) == 6 and all('본문' in line for line in parser.container_lines)
+
+
+def test_each_scene_gets_its_own_pinned_photo_and_charts_are_skipped(tmp_path, monkeypatch):
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    from app.media import discovery
+    from app.script.models import Scene, Script
+    def photo(seed):
+        buffer = BytesIO()
+        PILImage.new('RGB', (900, 1200), (seed * 40 % 255, 90, 120)).save(buffer, 'JPEG')
+        return buffer.getvalue()
+    def result(n, name):
+        return {'name': f'File:{name} {n}.jpg', 'author': 'Photographer', 'source_url': f'https://commons.wikimedia.org/wiki/File:{n}',
+                'download_url': f'https://thumb.wikimedia.org/{n}.jpg', 'license_type': 'CC-BY-SA-2.0',
+                'license_url': discovery.LICENSE_URLS['CC-BY-SA-2.0'], 'description': 'used cars parked'}
+    queries = []
+    def search(query):
+        queries.append(query)
+        return [] if 'decline' in query else [result(len(queries) * 10 + i, 'Used car lot') for i in range(3)]
+    monkeypatch.setattr(discovery, 'search', search)
+    monkeypatch.setattr(discovery, 'fetch_public', lambda url, **k: (url, photo(len(url)), 'image/jpeg'))
+    scenes = [Scene(headline=f'중고차 {i}', narration='중고차 이야기를 해요.', visual_query='중고차 가격 / used car price decline') for i in range(4)]
+    script = Script(title='중고차', description='중고차 자료화면 검증입니다.', scenes=scenes)
+    report = discovery.ensure_media(Settings(root=tmp_path), script, 'auto')
+    ids = [scene.asset_id for scene in script.scenes]
+    assert all(ids) and len(set(ids)) == 4 and len(report['imported']) == 4
+    assert queries[:2] == ['used car price decline', 'used car']  # abstract words dropped on retry
+    assert discovery.NOT_PHOTO.search('File:BEV EPA range comparison 2016-2017.png')
+
+
+def test_submitted_article_is_used_even_without_keyword_match_or_for_health_topics(monkeypatch):
+    monkeypatch.setattr(automatic, 'discover', lambda query: [])
+    monkeypatch.setattr(automatic, 'source_page', lambda url: (_ for _ in ()).throw(AssertionError('no extra fetch')))
+    blog = {**page(), 'url': 'https://blog.example.org/post', 'title': '위고비 이야기',
+            'lines': ['요즘 많은 사람들이 체중 관리 주사에 관심을 가지며 병원 상담을 받는다고 합니다.',
+                      '전문가들은 처방 기준과 부작용 설명을 꼭 확인하라고 조언한다고 전했습니다.']}
+    draft = {'source_url': blog['url'], 'category': 'health', 'topic': blog['title'], 'articles': [], 'evidence': []}
+    found, report = automatic.gather(draft, blog)
+    assert len(found) >= 2 and report['status'] == 'ready'
+    assert all(item['url'] == blog['url'] for item in found)

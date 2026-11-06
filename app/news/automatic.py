@@ -41,14 +41,14 @@ def discover(query: str) -> list[str]:
     return list(dict.fromkeys(url for _, url in sorted(ranked, reverse=True)))[:5]
 
 
-def excerpts(page: dict, query: str, *, official_only: bool = True) -> list[dict]:
+def excerpts(page: dict, query: str, *, official_only: bool = True, fallback: bool = False) -> list[dict]:
     if not page['published_date'] or (official_only and not official_url(page['url'])):
         return []
     wanted = terms(query)
     if re.search(r'발기|정력|케겔', query):
         wanted += ['physical activity', 'exercise', 'erectile', 'blood flow', 'treatment']
     title_numbers = set(re.findall(r'\d+(?:[.,]\d+)*', page.get('title', '')))
-    ranked = []
+    ranked, eligible = [], []
     lead = True
     for index, line in enumerate(page['lines']):
         # Full clauses only; do not truncate a limitation or harvest navigation.
@@ -58,6 +58,7 @@ def excerpts(page: dict, query: str, *, official_only: bool = True) -> list[dict
             continue
         if not re.search(r'[.!?]|[다요]$', line):
             continue
+        eligible.append((0, index, line))
         score = sum(word in line.lower() for word in wanted)
         # The lead paragraph and figures from the headline carry the core claim.
         score += 2 * len(title_numbers & set(re.findall(r'\d+(?:[.,]\d+)*', line)))
@@ -66,6 +67,9 @@ def excerpts(page: dict, query: str, *, official_only: bool = True) -> list[dict
             lead = False
         if score:
             ranked.append((score, index, line))
+    if not ranked and fallback:
+        # The user's own URL is always usable: with no keyword match, use its lead paragraphs.
+        ranked = eligible
     # Ties prefer earlier paragraphs (news is written lead-first).
     selected = sorted(sorted(ranked, key=lambda item: (-item[0], item[1]))[:4], key=lambda item: item[1])
     result = []
@@ -124,7 +128,8 @@ def gather(draft: dict, source: dict | None = None) -> tuple[list[dict], dict]:
     existing = draft.get('evidence', [])
     candidates, pages, errors = [], [], []
     medical = draft.get('category') == 'health' or draft.get('content_mode') == 'myth_check' or bool(HEALTH.search(query))
-    if source is not None and not medical:
+    if source is not None:
+        # The submitted article is always the primary material; the user reviews before publishing.
         pages.append(source)
     if re.search(r'발기|정력|케겔', query):
         candidates.append(ED_SOURCE)
@@ -161,7 +166,9 @@ def gather(draft: dict, source: dict | None = None) -> tuple[list[dict], dict]:
                 known_urls.add(page['url'])
         except (httpx.HTTPError, OSError, ValueError, NewsError) as exc:
             errors.append(f'{url}: {str(exc)[:180]}')
-    found = [item for page in pages for item in excerpts(page, query, official_only=medical or source is None)]
+    found = [item for page in pages for item in (
+        excerpts(page, query, official_only=False, fallback=True) if page is source
+        else excerpts(page, query, official_only=medical or source is None))]
     if source is not None and medical and not official_url(source['url']):
         found += source_outline(source)
     seen = {e['id'] for e in existing}

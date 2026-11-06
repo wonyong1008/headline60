@@ -328,6 +328,11 @@ def retry_submission(key: str):
     return submissions.retry(key)
 
 
+@app.post("/api/submissions/{key}/rebuild")
+def rebuild_submission(key: str):
+    return submissions.rebuild(key)
+
+
 @app.post("/api/submissions/{key}/cancel")
 def cancel_submission(key: str):
     return submissions.cancel(key)

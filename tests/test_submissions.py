@@ -321,3 +321,21 @@ def test_queue_waits_for_a_briefly_busy_pipeline_lock(tmp_path):
         LOCK_WAIT.reset(token)
         holder.close()
     assert acquired
+
+
+def test_rebuild_makes_a_new_job_and_new_upload_but_keeps_the_old_one(system):
+    config, manager, youtube, queue, renders = system
+    first = queue.create("https://example.org/a")
+    manager.pool.drain()
+    done = queue.get(first["id"])
+    assert done["status"] == "completed" and len(youtube.calls) == 1
+    with pytest.raises(ValueError):
+        queue.retry(first["id"])
+    queue.rebuild(first["id"])
+    manager.pool.drain()
+    again = queue.get(first["id"])
+    assert again["status"] == "completed" and again["job_id"] != done["job_id"]
+    assert youtube.calls == [done["job_id"], again["job_id"]] and len(renders) == 2
+    assert (pipeline.job_folder(config, done["job_id"]) / "output.mp4").is_file()
+    history = studio_store.get(config, again["draft_id"])["previous_outputs"]
+    assert history[-1]["youtube_url"] == done["youtube_url"]

@@ -157,9 +157,9 @@ def validate_plan(plan: dict, config: Settings) -> list[dict]:
         if kind == 'video' and not any(s.get('codec_type') == 'video' for s in probe(asset)['streams']):
             raise ValueError('영상 스트림이 없는 자료입니다.')
         duration = scene.get('duration', 3)
-        # Matches script_issues: one spoken scene may run up to 20 seconds.
-        if not finite(duration) or not .8 <= duration <= 20:
-            raise ValueError('장면 길이는 0.8~20초여야 합니다.')
+        # Scene length follows the spoken narration; only absurd values are technical errors.
+        if not finite(duration) or not .8 <= duration <= 40:
+            raise ValueError('장면 길이는 0.8~40초여야 합니다.')
         if kind != 'graphic' and (not isinstance(scene.get('credit'), str) or not scene['credit'].strip()):
             raise ValueError('자료사진·영상 저작자·라이선스 크레딧이 필요합니다.')
         fitted, size = layout_lines(scene.get('lines'), config.font)

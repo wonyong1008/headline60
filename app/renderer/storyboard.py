@@ -220,5 +220,5 @@ def build_plan(script: Script, folder: Path, request, config: Settings, news: di
     # Reels v3 keeps photos fixed; credits must describe the edits actually applied.
     credits = [f"{a.get('name', a['asset_id'])}: {a['attribution'].replace(', zoom/pan', '') if still else a['attribution']} / {a['license_type']}\n{a['source_url']}\n{a.get('license_url', '')}" for a in used.values()]
     edits = "크롭·자막·텍스트 모션을 추가했습니다(사진은 고정)." if still else "크롭·줌/팬·자막·모션을 추가했습니다."
-    (folder / "CREDITS.md").write_text(f"# 자료 출처\n\n사진·영상은 자료 화면입니다. {edits}\n\n" + "\n\n".join(credits) + ("\n\nCC BY-SA 자료를 사용한 영상 편집물은 CC BY-SA 4.0으로 제공합니다.\n" if any(a["license_type"] == "CC-BY-SA-4.0" for a in used.values()) else ""))
+    (folder / "CREDITS.md").write_text(f"# 자료 출처\n\n사진·영상은 자료 화면입니다. {edits}\n\n" + "\n\n".join(credits) + ("\n\nCC BY-SA 자료를 사용한 영상 편집물은 CC BY-SA 4.0으로 제공합니다.\n" if any(a["license_type"].startswith("CC-BY-SA") for a in used.values()) else ""))
     return plan

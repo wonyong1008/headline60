@@ -21,7 +21,7 @@ from app.process import file_digest, probe
 MAX_BYTES = 50 * 1024**2
 MAX_PIXELS = 24_000_000
 MAX_SECONDS = 300
-LICENSES = {"CC0", "CC-BY-4.0", "CC-BY-SA-4.0", "user-owned", "permission-granted", "Pexels"}
+LICENSES = {"CC0", "CC-BY-4.0", "CC-BY-SA-4.0", "CC-BY-3.0", "CC-BY-SA-3.0", "CC-BY-2.0", "CC-BY-SA-2.0", "user-owned", "permission-granted", "Pexels"}
 RIGHTS_NOTE = "approved는 사용자 확인 또는 원본 라이선스 메타데이터 기록입니다. 초상권·상표권 등 모든 권리를 자동 증명하지 않습니다."
 _bundle_lock = threading.RLock()
 
@@ -30,7 +30,7 @@ class MediaAsset(BaseModel):
     asset_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     name: str = Field(min_length=1, max_length=200)
     source_url: str = Field(default="", max_length=2000)
-    license_type: Literal["CC0", "CC-BY-4.0", "CC-BY-SA-4.0", "user-owned", "permission-granted", "Pexels"]
+    license_type: Literal["CC0", "CC-BY-4.0", "CC-BY-SA-4.0", "CC-BY-3.0", "CC-BY-SA-3.0", "CC-BY-2.0", "CC-BY-SA-2.0", "user-owned", "permission-granted", "Pexels"]
     attribution: str = Field(default="", max_length=2000)
     category: str = Field(default="general", min_length=1, max_length=80)
     local_path: str
@@ -160,7 +160,7 @@ def register_upload(config: Settings, content: bytes | Path, *, name: str,
                     description: str = "", rights_basis: str = "user_confirmation") -> dict:
     if license_type not in LICENSES:
         raise ValueError("지원하지 않는 라이선스입니다.")
-    if license_type in {"CC-BY-4.0", "CC-BY-SA-4.0"} and not attribution.strip():
+    if license_type.startswith("CC-BY") and not attribution.strip():
         raise ValueError("CC BY 자료에는 저작자·출처 표시가 필요합니다.")
     if type(rights_confirmed) is not bool:
         raise ValueError("권리 확인은 boolean이어야 합니다.")
