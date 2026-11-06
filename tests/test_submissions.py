@@ -298,3 +298,26 @@ def test_connection_callback_during_drain_wakes_existing_auth_wait(system, monke
     monkeypatch.setattr(youtube, "upload", upload)
     manager.pool.drain()
     assert queue.get(row["id"])["status"] == "completed" and len(renders) == 1 and calls == 2
+
+
+def test_queue_waits_for_a_briefly_busy_pipeline_lock(tmp_path):
+    import fcntl
+    import threading
+
+    from app.config import Settings
+    from app.jobs.pipeline import LOCK_WAIT, exclusive
+    config = Settings(root=tmp_path)
+    config.data.mkdir(parents=True, exist_ok=True)
+    holder = (config.data / "pipeline.lock").open("a")
+    fcntl.flock(holder, fcntl.LOCK_EX)
+    with pytest.raises(RuntimeError), exclusive(config):
+        pass
+    threading.Timer(0.5, lambda: fcntl.flock(holder, fcntl.LOCK_UN)).start()
+    token = LOCK_WAIT.set(10.0)
+    try:
+        with exclusive(config):
+            acquired = True
+    finally:
+        LOCK_WAIT.reset(token)
+        holder.close()
+    assert acquired

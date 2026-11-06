@@ -1,3 +1,4 @@
+import contextvars
 import fcntl
 import json
 import re
@@ -87,14 +88,24 @@ def job_details(manifest: dict) -> dict:
             "output": f"/jobs/{manifest['id']}/output.mp4" if manifest["status"] == "completed" else None}
 
 
+# Seconds to wait for the lock. Interactive calls fail fast (0); the URL queue sets a
+# longer wait so a briefly busy lock never turns a queued item into a permanent failure.
+LOCK_WAIT = contextvars.ContextVar("headline_lock_wait", default=0.0)
+
+
 @contextmanager
 def exclusive(config: Settings):
     config.data.mkdir(parents=True, exist_ok=True)
     with (config.data / "pipeline.lock").open("a") as handle:
-        try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise RuntimeError("다른 영상 제작이 실행 중입니다. 완료 후 다시 시도하세요.") from exc
+        deadline = time.monotonic() + LOCK_WAIT.get()
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError as exc:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("다른 영상 제작이 실행 중입니다. 완료 후 다시 시도하세요.") from exc
+                time.sleep(2)
         try:
             yield
         finally:

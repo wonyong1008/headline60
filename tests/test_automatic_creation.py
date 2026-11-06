@@ -175,7 +175,10 @@ def test_compact_model_contract_reuses_script_and_real_source_ids(monkeypatch):
     original = httpx.Client
     requests = []
     def respond(request):
-        requests.append(json.loads(request.content))
+        body = json.loads(request.content)
+        if 'checks' in body['format']['properties']:
+            return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': all_faithful(4)})
+        requests.append(body)
         return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': json.dumps(response)})
     monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
     draft = {'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급 계획'}
@@ -184,6 +187,11 @@ def test_compact_model_contract_reuses_script_and_real_source_ids(monkeypatch):
     assert all(s.claim_ids == [source['id']] for s in script.scenes)
     assert requests[0]['keep_alive'] == 0
     assert not script_issues_for_test(script, source)
+
+
+def all_faithful(count, wrong=(), phrase='반드시 의미를'):
+    return json.dumps({'checks': [{'scene': i, 'faithful': i not in wrong, 'problem': '원문과 다른 연결' if i in wrong else '',
+                                   'unsupported_phrase': phrase if i in wrong else ''} for i in range(1, count + 1)]})
 
 
 def script_issues_for_test(script, source):
@@ -261,7 +269,10 @@ def test_writer_retries_with_feedback_at_most_three_times_and_trims_hook(monkeyp
     original, prompts = httpx.Client, []
     def respond_with(answers):
         def respond(request):
-            prompts.append(json.loads(request.content)['prompt'])
+            body = json.loads(request.content)
+            if 'checks' in body['format']['properties']:
+                return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': all_faithful(4)})
+            prompts.append(body['prompt'])
             answer = answers[min(len(prompts) - 1, len(answers) - 1)]
             return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': json.dumps(answer)})
         return respond
@@ -275,3 +286,86 @@ def test_writer_retries_with_feedback_at_most_three_times_and_trims_hook(monkeyp
     with pytest.raises(LLMError):
         automatic_writer.generate_automatic(draft, Settings())
     assert len(prompts) == automatic_writer.MAX_ATTEMPTS == 3
+
+
+def test_wording_that_changes_meaning_or_links_other_sources_is_rejected():
+    from app.llm.automatic_writer import faithfulness_issues
+    from app.script.models import Scene
+    found = automatic.excerpts({**page(), 'title': '수도권에 5년 간 주택 135만 호 공급',
+        'lines': ['정부는 수도권 지역에 2030년까지 모두 135만 호를 공급할 계획이다. 이는 늘어난 수치다.',
+                  '정비 사업 제도 개편으로 앞으로 5년 동안 23만 4000호의 주택 공급을 지원한다고 밝혔다.']},
+        '수도권에 5년 간 주택 135만 호 공급')
+    evidence = [Evidence.model_validate(e) for e in found]
+    first = Scene(headline='135만 호 공급', narration='정부는 2030년까지 135만 호를 공급할 계획이에요.', claim_ids=[evidence[0].id])
+    linked = Scene(headline='23만 4000호 추가 공급', narration='이를 통해 5년 동안 23만 4000호 공급을 지원해요.', claim_ids=[evidence[1].id])
+    issues = faithfulness_issues([first, linked], evidence)
+    assert any('추가' in issue for issue in issues) and any('인과 연결어' in issue for issue in issues)
+    faithful = Scene(headline='정비사업 23만 4000호', narration='정비 사업 제도 개편으로 5년 동안 23만 4000호 공급을 지원해요.', claim_ids=[evidence[1].id])
+    assert faithfulness_issues([first, faithful], evidence) == []
+
+
+def test_local_fact_check_rejection_triggers_bounded_retry(monkeypatch):
+    from app.llm import automatic_writer
+    from app.llm.ollama import LLMError
+    source = automatic.excerpts(page(), '주택 공급')[0]
+    good = {'title': '주택 공급 계획 읽는 법', 'scenes': [
+        {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까요?', 'source': 0, 'visual_query': '아파트 전경'},
+        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지'},
+        {'headline': '계획의 의미', 'narration': f'{date.today().year}년 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어요.', 'source': 0, 'visual_query': '주택 건설'},
+        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이에요.', 'source': 0, 'visual_query': '아파트 전경'}]}
+    original, calls = httpx.Client, []
+    def respond(request):
+        body = json.loads(request.content)
+        checking = 'checks' in body['format']['properties']
+        calls.append('check' if checking else 'write')
+        payload = all_faithful(4, wrong=(3,), phrase=f'{date.today().year}년 공급 계획') if checking else json.dumps(good)
+        return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': payload})
+    monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
+    draft = {'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급 계획'}
+    with pytest.raises(LLMError, match='원문과 다름'):
+        automatic_writer.generate_automatic(draft, Settings())
+    assert calls == ['write', 'check'] * automatic_writer.MAX_ATTEMPTS
+
+
+def test_tighten_only_removes_other_source_sentences_links_and_unsupported_additions():
+    from app.llm.automatic_writer import tighten
+    source = Evidence.model_validate(automatic.excerpts({**page(), 'title': '수도권에 5년 간 주택 135만 호 공급',
+        'lines': ['정비 사업 제도 개편으로 앞으로 5년 동안 23만 4000호의 주택 공급을 지원한다고 정부가 밝혔다.']},
+        '수도권에 5년 간 주택 135만 호 공급')[0])
+    narration, headline = tighten('이를 통해 5년 동안 23만 4000호의 주택 공급을 추가로 지원해요. 2026~2027년 물량의 50%를 집중 공급해요.',
+                                  '23만 4000호 추가 공급', source, 75)
+    assert narration == '5년 동안 23만 4000호의 주택 공급을 지원해요.'
+    assert headline == '23만 4000호 공급'
+
+
+def test_fact_check_rejection_must_quote_text_missing_from_source():
+    from app.llm.automatic_writer import grounded_rejection
+    from app.script.models import Scene
+    scene = Scene(headline='135만 호 공급', narration='정부는 135만 호를 반드시 공급해요.')
+    source = '정부는 2030년까지 모두 135만 호를 공급할 계획이다.'
+    assert grounded_rejection({'faithful': False, 'unsupported_phrase': '반드시'}, scene, source)
+    assert not grounded_rejection({'faithful': False, 'unsupported_phrase': '135만 호'}, scene, source)
+    assert not grounded_rejection({'faithful': False, 'unsupported_phrase': '대본에 없는 말'}, scene, source)
+    assert not grounded_rejection({'faithful': True, 'unsupported_phrase': ''}, scene, source)
+    paraphrase = Scene(headline='꿈 해몽', narration='똥이 가득 쌓인 꿈은 예상치 못한 수익이 생길 수 있어요.')
+    assert not grounded_rejection({'faithful': False, 'unsupported_phrase': paraphrase.narration}, paraphrase,
+                                  '똥이 가득 쌓여 있는 꿈은 예상치 못한 수익이나 금전적 이익이 생길 가능성이 있다.')
+
+
+def test_source_markers_are_stripped_and_long_hook_uses_article_headline(monkeypatch):
+    from app.llm import automatic_writer
+    source = automatic.excerpts(page(), '주택 공급')[0]
+    story = {'title': '주택 공급 계획', 'scenes': [
+        {'headline': '계획과 입주 (source: 0)', 'narration': '정부가 도심 주택 공급 계획을 발표했고 이 자료는 계획을 설명하며 실제 입주 실적과는 구분해야 한다는 점을 강조했다 (source: 0)', 'source': 0, 'visual_query': '아파트'},
+        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지'},
+        {'headline': '계획의 의미', 'narration': '발표된 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어요.', 'source': 0, 'visual_query': '주택 건설'},
+        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이에요.', 'source': 0, 'visual_query': '아파트 전경'}]}
+    original = httpx.Client
+    def respond(request):
+        checking = 'checks' in json.loads(request.content)['format']['properties']
+        return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': all_faithful(4) if checking else json.dumps(story)})
+    monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
+    draft = {'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '도심 주택 공급, 계획일까 실적일까?…정책 읽는 법'}
+    script, _ = automatic_writer.generate_automatic(draft, Settings())
+    assert script.hook == '도심 주택 공급, 계획일까 실적일까?'
+    assert all('source' not in s.narration + s.headline for s in script.scenes)

@@ -172,6 +172,8 @@ class SubmissionQueue:
         return None
 
     def _drain(self) -> None:
+        from app.jobs.pipeline import LOCK_WAIT
+        token = LOCK_WAIT.set(1800.0)  # pool threads are shared; restore after draining
         try:
             with keep_awake():
                 self._drain_items()
@@ -179,6 +181,8 @@ class SubmissionQueue:
             with self.lock:
                 self._draining = False
             raise
+        finally:
+            LOCK_WAIT.reset(token)
 
     def _drain_items(self) -> None:
         attempted = set()
