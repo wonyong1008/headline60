@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="headline-token" content="{{ token }}">
+  <title>{{ script.title }} · 자막 편집</title>
+  <link rel="stylesheet" href="/static/style.css?v=phase2-20261030-v2">
+</head>
+<body class="script-page" data-job-id="{{ job_id }}">
+<main class="script-document">
+  <header>
+    <a class="brand" href="/">HEADLINE <span>60</span></a>
+    <a href="/history">제작 내역으로 돌아가기</a>
+  </header>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <p class="eyebrow">PHRASE CAPTIONS / 자막 편집</p>
+  <h1>{{ script.title }}</h1>
+  <p class="muted">작업 {{ job_id }}{% if revision is defined %} · 기준 대본 버전 {{ revision }}{% endif %}</p>
+  <section class="panel">
+    <h2>영상과 구절 자막</h2>
+    <p>구절별로 합성한 음성의 실제 길이를 기준으로 시간을 정했습니다. 단어별 강제 정렬은 아니므로 재생하며 발음과 표시 시점을 확인하세요.</p>
+    <video id="caption-video" aria-label="자막 편집 기준 영상" controls preload="metadata" poster="/jobs/{{ job_id }}/poster.png" src="/jobs/{{ job_id }}/output.mp4"></video>
+    <p id="video-status" class="muted" role="status">영상 정보를 불러오는 중입니다.</p>
+    <div class="whole-narration" aria-live="polite"><p id="caption-live-preview">재생 중인 구절의 편집 텍스트가 여기에 표시됩니다.</p></div>
+    <p class="muted">위 텍스트는 편집 참고용입니다. 영상에 구워진 기존 자막은 저장·승인 후 재렌더링해야 바뀝니다.</p>
+  </section>
+  <section class="panel">
+    <div class="heading"><h2>전체 자막</h2><span id="caption-count" class="badge">{{ cues|length }}개 구절</span></div>
+    <p>시간은 영상 시작부터의 초입니다. 순서를 유지하고 같은 장면 안에서 겹치지 않게 조정하세요. 자막은 짧은 두 줄을 기본으로 하며 실제 글꼴 폭은 렌더링할 때 다시 확인합니다.</p>
+    <form id="caption-form">
+      <div id="caption-rows">
+      {% for cue in cues %}
+        <article class="scene caption-row" data-scene="{{ cue.scene }}" data-scene-start="{{ cue.scene_start }}">
+          <div class="heading">
+            <h3>구절 {{ loop.index }} <span class="badge">장면 {{ cue.scene + 1 }}</span></h3>
+            <button type="button" class="secondary cue-play">이 구절 재생</button>
+          </div>
+          <label>표시할 자막
+            <textarea class="cue-text" rows="2" maxlength="80" required>{{ cue.text }}</textarea>
+          </label>
+          <p class="muted cue-length"></p>
+          <div class="form-grid">
+            <label>시작 시간 (초)<input class="cue-start" type="number" min="0" step="0.0001" value="{{ cue.start }}" required></label>
+            <label>종료 시간 (초)<input class="cue-end" type="number" min="0" step="0.0001" value="{{ cue.end }}" required></label>
+          </div>
+          <label>강조할 숫자·단어 (쉼표로 구분, 최대 6개)
+            <input class="cue-highlight" maxlength="180" value="{{ cue.highlight|default([])|join(', ') }}" placeholder="예: 인공지능, 검증">
+          </label>
+        </article>
+      {% endfor %}
+      </div>
+      <div class="actions">
+        <button id="save-captions" type="submit"{% if not cues %} disabled{% endif %}>새 자막 버전 저장</button>
+        <a id="review-new-version" href="/studio" hidden>새 버전 검토하러 가기 →</a>
+      </div>
+    </form>
+    <p class="muted">저장하면 대본의 새 버전을 만들고 검토 승인을 해제합니다. 기존 완료 영상은 보존되며, 새 버전을 승인한 뒤 생성하면 같은 음성과 카드를 재사용합니다.</p>
+  </section>
+  <footer>HEADLINE 60 · @headline.60 <span>내 파일은 내 컴퓨터에.</span></footer>
+</main>
+<script src="/static/caption-editor.js?v=phase2-20261030-v2" defer></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+[project]
+name = "headline60-imagegen-runtime"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+# Pillow 13 relies on lazy-import syntax that breaks on Python 3.12; keep the app's 12.x line.
+dependencies = ["mflux==0.23.0", "huggingface-hub>=0.34,<2", "pillow>=12.3,<13"]
