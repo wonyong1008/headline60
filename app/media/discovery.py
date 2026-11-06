@@ -92,8 +92,11 @@ def search(query: str) -> list[dict]:
 def query_variants(scene, category: str) -> list[str]:
     """Scene query, then the same without abstract words, then a topic-level photo."""
     first = query_for(scene)
-    concrete = ' '.join(w for w in first.split() if w.lower() not in ABSTRACT)
-    return list(dict.fromkeys(q for q in (first, concrete, CATEGORY_QUERIES.get(category, CATEGORY_QUERIES['trending'])) if q))
+    words = [w for w in first.split() if w.lower() not in ABSTRACT]
+    # Commons matches every word, so long queries often return nothing; try shorter subjects too.
+    shorter = [' '.join(words[:2]), ' '.join(words[-2:])] if len(words) > 2 else []
+    return list(dict.fromkeys(q for q in (first, ' '.join(words), *shorter,
+                                          CATEGORY_QUERIES.get(category, CATEGORY_QUERIES['trending'])) if q))
 
 
 def ensure_media(config: Settings, script, category: str) -> dict:
@@ -111,7 +114,7 @@ def ensure_media(config: Settings, script, category: str) -> dict:
             scene.asset_id = match['asset_id']
             continue
         for query in query_variants(scene, category):
-            if offline or len(searched) >= 8 or time.perf_counter() - started > 60:
+            if offline or len(searched) >= 14 or time.perf_counter() - started > 75:
                 break
             if query not in results:
                 searched.add(query)

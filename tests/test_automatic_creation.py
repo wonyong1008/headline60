@@ -447,3 +447,11 @@ def test_submitted_article_is_used_even_without_keyword_match_or_for_health_topi
     found, report = automatic.gather(draft, blog)
     assert len(found) >= 2 and report['status'] == 'ready'
     assert all(item['url'] == blog['url'] for item in found)
+
+
+def test_long_photo_queries_fall_back_to_two_word_subjects():
+    from app.media import discovery
+    from app.script.models import Scene
+    scene = Scene(headline='약국', narration='약국 진열대 이야기를 해요.', visual_query='약국 진열대 / pharmacy shelf weight loss pills')
+    assert discovery.query_variants(scene, 'health') == [
+        'pharmacy shelf weight loss pills', 'pharmacy shelf', 'loss pills', 'pharmacy medicine shelf']

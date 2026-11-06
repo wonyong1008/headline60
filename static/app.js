@@ -388,7 +388,7 @@ document.addEventListener('click',async e=>{
   }catch(error){notice(error.message,true);}
 });
 let anchorProfiles = [], submissions = [], submissionSignature = '', submissionRefreshing = false;
-const submissionLabels = {queued:'대기 중',preparing:'대본·자료 준비 중',rendering:'영상 제작 중',uploading:'YouTube 업로드 중',completed:'완료',needs_auth:'YouTube 연결 필요',needs_review:'내용 확인 필요',failed:'실패',cancelled:'취소됨'};
+const submissionLabels = {queued:'대기 중',preparing:'대본·자료 준비 중',rendering:'영상 제작 중',uploading:'YouTube 업로드 중',completed:'완료',needs_auth:'YouTube 연결 필요',needs_review:'내용 확인 필요',upload_wait:'업로드 대기(한도)',failed:'실패',cancelled:'취소됨'};
 const submissionStages = {source_and_script:'원문·대본 준비',render_validation:'대본·제작 설정 확인',youtube_upload:'YouTube 비공개 업로드',queued:'등록 대기',source:'원문 읽기',research:'자료 확인',researching:'자료 확인',prepare:'대본·자료 준비',preparing:'대본·자료 준비',script:'대본 생성',generating:'대본 생성',tts:'음성·자막 제작',cards:'장면 준비',render:'영상 합성',rendering:'영상 제작',verify:'영상 검사',upload:'YouTube 업로드',uploading:'YouTube 업로드',completed:'비공개 업로드 완료',needs_auth:'YouTube 연결 필요',needs_review:'내용 확인 필요',failed:'실패',cancelled:'취소됨'};
 function safeWebURL(value) {
   try { const url=new URL(value); return ['http:','https:'].includes(url.protocol)?url.href:''; } catch { return ''; }
@@ -412,10 +412,10 @@ async function loadAnchorPickers() {
 }
 function submissionRow(row, position) {
   const url=safeWebURL(row.url),youtube=safeWebURL(row.youtube_url);
-  const canPreview=row.job_id&&(['uploading','completed','needs_auth'].includes(row.status)||row.stage==='youtube_upload');
+  const canPreview=row.job_id&&(['uploading','completed','needs_auth','upload_wait'].includes(row.status)||row.stage==='youtube_upload');
   const status=submissionLabels[row.status]||row.status;
   const stage=submissionStages[row.stage]||row.stage||'';
-  const retry=['failed','needs_auth','needs_review','cancelled'].includes(row.status);
+  const retry=['failed','needs_auth','needs_review','cancelled','upload_wait'].includes(row.status);
   return `<tr data-submission="${esc(row.id)}"><td class="submission-order">${row.status==='queued'?`<strong>${position}</strong>`:['preparing','rendering','uploading'].includes(row.status)?'<span class="submission-active">진행 중</span>':'—'}<small>등록 #${esc(row.sequence)}</small></td><td class="submission-title"><strong>${esc(row.title||'제목 확인 중')}</strong>${url?`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`:''}<small>${row.anchor_id?'아나운서 포함 · 실험':'아나운서 미포함'} · ${esc(formatDate(row.created_at))}</small></td><td><span class="badge ${row.status==='completed'?'ok':''} ${row.status==='failed'?'submission-failed':''}">${esc(status)}</span>${stage&&stage!==status?`<small>${esc(stage)}</small>`:''}${row.error?`<details class="submission-error"><summary>상세 내용</summary><p>${esc(row.error)}</p></details>`:''}${row.status==='needs_auth'?'<a href="/settings">YouTube 연결 →</a>':''}${row.status==='needs_review'&&row.draft_id?`<a href="/studio?draft=${encodeURIComponent(row.draft_id)}">대본 확인 →</a>`:''}</td><td>${canPreview?`<button type="button" class="secondary" data-submission-preview="${esc(row.id)}">미리보기</button>`:'<span class="muted">준비 중</span>'}</td><td>${youtube?`<a href="${esc(youtube)}" target="_blank" rel="noopener noreferrer">영상 열기 ↗</a><small>비공개</small>`:'—'}</td><td>${retry?`<button type="button" class="secondary" data-submission-retry="${esc(row.id)}">다시 시도</button>`:row.status==='completed'?`<button type="button" class="secondary" data-submission-rebuild="${esc(row.id)}">다시 만들기</button>`:'—'}</td></tr>`;
 }
 async function refreshSubmissions() {

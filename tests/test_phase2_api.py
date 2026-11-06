@@ -32,6 +32,9 @@ def local_app(tmp_path, monkeypatch):
     service.pool = QueueOnly()
     monkeypatch.setattr(main, 'settings', config)
     monkeypatch.setattr(main, 'manager', service)
+    youtube = main.YoutubeService(config)
+    monkeypatch.setattr(main, 'youtube', youtube)
+    monkeypatch.setattr(main, 'submissions', main.SubmissionQueue(config, service, youtube))
     return config, service
 
 
@@ -214,3 +217,8 @@ def test_valid_caption_edit_creates_unapproved_revision_and_keeps_finished_files
             assert conflict.status_code == 400
             assert studio_store.get(config, draft['id'])['revision'] == 2
     asyncio.run(check())
+
+
+def test_app_lifespan_in_tests_never_touches_the_real_project_queue(local_app):
+    from app.config import ROOT
+    assert main.submissions.config.root != ROOT and main.youtube.root.is_relative_to(main.settings.root)

@@ -1,5 +1,6 @@
 """Local desktop OAuth and resumable private YouTube uploads; no credentials in APIs."""
 import base64
+import fcntl
 import hashlib
 import json
 import re
@@ -222,6 +223,15 @@ class YoutubeService:
             return token['access_token']
 
     def upload(self, folder: Path) -> dict:
+        # One upload per job even across processes: a second caller waits, then sees the video ID.
+        with (folder / 'youtube-upload.lock').open('a') as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                return self._upload(folder)
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+    def _upload(self, folder: Path) -> dict:
         path, journal = folder / 'output.mp4', folder / 'youtube-upload.json'
         if not path.is_file() or not (folder / 'ffprobe.json').is_file():
             raise ValueError('검증을 완료한 영상만 업로드할 수 있습니다.')

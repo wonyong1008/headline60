@@ -339,3 +339,23 @@ def test_rebuild_makes_a_new_job_and_new_upload_but_keeps_the_old_one(system):
     assert (pipeline.job_folder(config, done["job_id"]) / "output.mp4").is_file()
     history = studio_store.get(config, again["draft_id"])["previous_outputs"]
     assert history[-1]["youtube_url"] == done["youtube_url"]
+
+
+def test_daily_upload_limit_waits_and_retries_automatically_later(system, monkeypatch):
+    from app.jobs import submissions as module
+    _, manager, youtube, queue, renders = system
+    monkeypatch.setattr(queue, "_schedule_wake", lambda: None)
+    first = queue.create("https://example.org/a")
+    youtube.error = RuntimeError("YouTube 요청 실패 (HTTP 400, uploadLimitExceeded)")
+    manager.pool.drain()
+    waiting = queue.get(first["id"])
+    assert waiting["status"] == "upload_wait" and waiting["job_id"] and len(renders) == 1
+    youtube.error = None
+    queue.start()
+    manager.pool.drain()
+    assert queue.get(first["id"])["status"] == "upload_wait"  # too early: not retried yet
+    monkeypatch.setattr(module, "UPLOAD_WAIT_SECONDS", 0)
+    queue.start()
+    manager.pool.drain()
+    done = queue.get(first["id"])
+    assert done["status"] == "completed" and len(renders) == 1  # same finished video, uploaded later

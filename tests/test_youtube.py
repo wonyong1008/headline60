@@ -160,3 +160,24 @@ def test_upload_refuses_any_channel_other_than_the_connected_or_pinned_one(tmp_p
     with pytest.raises(youtube.YoutubeAuthError):
         service.upload(video)
     assert all(request.url.path.endswith('/channels') for request in sent)
+
+
+def test_concurrent_upload_calls_for_one_job_create_one_video(service, video, monkeypatch):
+    import threading
+    inserted = []
+    def respond(request):
+        if request.url.path.endswith('/channels'):
+            return httpx.Response(200, json={'items': [{'id': 'UCexample'}]})
+        if request.url.path.endswith('/thumbnails/set'):
+            return httpx.Response(200, json={})
+        if request.method == 'POST':
+            inserted.append(1)
+            time.sleep(0.2)
+            return httpx.Response(200, headers={'location': 'https://www.googleapis.com/upload/session?upload_id=one'})
+        return httpx.Response(201, json={'id': 'single12345'})
+    mock_client(monkeypatch, respond)
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(service.upload(video)['video_id'])) for _ in range(2)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert results == ['single12345', 'single12345'] and len(inserted) == 1

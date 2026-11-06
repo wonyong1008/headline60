@@ -1,8 +1,10 @@
 """Durable URL inbox, drained by the existing single production worker."""
 import os
+import re
 import subprocess
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -10,6 +12,8 @@ from uuid import uuid4
 from app import studio_store
 from app.config import Settings
 from app.jobs import store
+
+UPLOAD_WAIT_SECONDS = 3 * 3600
 from app.jobs.pipeline import job_folder
 from app.news.evidence import public_url
 from app.news.feeds import CATEGORIES
@@ -124,7 +128,7 @@ class SubmissionQueue:
     def retry(self, key: str) -> dict:
         with self.lock:
             row = self.get(key)
-            if row["status"] not in {"failed", "needs_auth", "needs_review", "cancelled"}:
+            if row["status"] not in {"failed", "needs_auth", "needs_review", "cancelled", "upload_wait"}:
                 raise ValueError("중단되거나 실패한 작업만 다시 시도할 수 있습니다.")
             result = self._update(key, status="queued", stage="queued", error=None)
             self.start()
@@ -151,6 +155,12 @@ class SubmissionQueue:
             self.start()
             return result
 
+    def _schedule_wake(self) -> None:
+        if getattr(self, "_wake_timer", None) is None or not self._wake_timer.is_alive():
+            self._wake_timer = threading.Timer(UPLOAD_WAIT_SECONDS + 5, self.start)
+            self._wake_timer.daemon = True
+            self._wake_timer.start()
+
     def cancel(self, key: str) -> dict:
         with self.lock:
             if self.get(key)["status"] != "queued":
@@ -159,6 +169,8 @@ class SubmissionQueue:
 
     def recover(self) -> None:
         """Return interrupted submissions to the inbox; completed jobs remain reusable."""
+        if any(row["status"] == "upload_wait" for row in self.listing()):
+            self._schedule_wake()
         with self.lock, store.connect(self.config) as db:
             db.execute("""UPDATE submissions SET status='queued', updated_at=?,
                 error='서버가 다시 시작되어 저장된 단계부터 재개합니다.'
@@ -186,7 +198,9 @@ class SubmissionQueue:
             db.execute("BEGIN IMMEDIATE")
             for candidate in db.execute("SELECT * FROM submissions ORDER BY sequence"):
                 row = dict(candidate)
-                if row["status"] == "queued" or (connected and row["status"] == "needs_auth" and row["id"] not in attempted):
+                waited = (row["status"] == "upload_wait" and row["id"] not in attempted
+                          and datetime.fromisoformat(row["updated_at"]).timestamp() <= time.time() - UPLOAD_WAIT_SECONDS)
+                if row["status"] == "queued" or waited or (connected and row["status"] == "needs_auth" and row["id"] not in attempted):
                     db.execute("UPDATE submissions SET status='preparing', updated_at=?, error=NULL WHERE id=?",
                                (datetime.now(UTC).isoformat(), row["id"]))
                     return row
@@ -226,6 +240,12 @@ class SubmissionQueue:
             except Exception as exc:  # noqa: BLE001 - isolate a failed item and continue the inbox
                 from app.integrations.youtube import YoutubeAuthError
                 current = self.get(row["id"])
+                if re.search(r"uploadLimitExceeded|quotaExceeded|rateLimitExceeded", str(exc)):
+                    # YouTube's daily cap: the video is finished; upload again later automatically.
+                    self._update(row["id"], status="upload_wait", stage="youtube_upload",
+                                 error="YouTube 일일 업로드 한도에 걸렸습니다. 영상은 완성됐고 몇 시간 뒤 자동으로 다시 올립니다.")
+                    self._schedule_wake()
+                    continue
                 self._update(row["id"], status="needs_auth" if isinstance(exc, YoutubeAuthError) else "failed",
                              stage=current["stage"], error=str(exc) or type(exc).__name__)
 
