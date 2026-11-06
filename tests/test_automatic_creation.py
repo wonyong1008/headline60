@@ -256,7 +256,6 @@ def test_source_link_identifiers_are_not_treated_as_stated_figures():
 
 def test_writer_retries_with_feedback_at_most_three_times_and_trims_hook(monkeypatch):
     from app.llm import automatic_writer
-    from app.llm.ollama import LLMError
     source = automatic.excerpts(page(), '주택 공급')[0]
     long_scene = '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이며 그 차이를 하나하나 짚어 보는 일이 필요하다고 볼 수 있어요.'
     bad = {'title': '주택 공급', 'scenes': [
@@ -283,9 +282,9 @@ def test_writer_retries_with_feedback_at_most_three_times_and_trims_hook(monkeyp
     assert script.scenes[0].narration == '주택 공급 계획, 어떻게 읽을까요?' == script.hook
     prompts.clear()
     monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond_with([bad]))))
-    with pytest.raises(LLMError):
-        automatic_writer.generate_automatic(draft, Settings())
-    assert len(prompts) == automatic_writer.MAX_ATTEMPTS == 3
+    # Content problems never block production: after 3 bounded attempts the draft proceeds with warnings.
+    script, raw = automatic_writer.generate_automatic(draft, Settings())
+    assert len(prompts) == automatic_writer.MAX_ATTEMPTS == 3 and raw['warnings']
 
 
 def test_wording_that_changes_meaning_or_links_other_sources_is_rejected():
@@ -306,7 +305,6 @@ def test_wording_that_changes_meaning_or_links_other_sources_is_rejected():
 
 def test_local_fact_check_rejection_triggers_bounded_retry(monkeypatch):
     from app.llm import automatic_writer
-    from app.llm.ollama import LLMError
     source = automatic.excerpts(page(), '주택 공급')[0]
     good = {'title': '주택 공급 계획 읽는 법', 'scenes': [
         {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까요?', 'source': 0, 'visual_query': '아파트 전경'},
@@ -322,9 +320,9 @@ def test_local_fact_check_rejection_triggers_bounded_retry(monkeypatch):
         return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': payload})
     monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
     draft = {'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급 계획'}
-    with pytest.raises(LLMError, match='원문과 다름'):
-        automatic_writer.generate_automatic(draft, Settings())
+    script, raw = automatic_writer.generate_automatic(draft, Settings())
     assert calls == ['write', 'check'] * automatic_writer.MAX_ATTEMPTS
+    assert any('원문과 다름' in warning for warning in raw['warnings']) and len(script.scenes) == 4
 
 
 def test_tighten_only_removes_other_source_sentences_links_and_unsupported_additions():
@@ -386,3 +384,24 @@ def test_casual_speech_level_is_not_a_rejection_reason(monkeypatch):
     monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
     script, _ = automatic_writer.generate_automatic({'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급'}, Settings())
     assert script.scenes[1].narration.endswith('먼저야.')
+
+
+def test_unparseable_model_output_still_fails_instead_of_rendering(monkeypatch):
+    from app.llm import automatic_writer
+    from app.llm.ollama import LLMError
+    source = automatic.excerpts(page(), '주택 공급')[0]
+    original = httpx.Client
+    monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': '{"title": "x"'}))))
+    with pytest.raises(LLMError):
+        automatic_writer.generate_automatic({'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택'}, Settings())
+
+
+def test_article_body_with_br_paragraphs_and_unclosed_noscript_is_read():
+    html = ('<html><body><noscript><iframe src="x"></iframe></noscript><nav>메뉴</nav>'
+            '<div class="detail" id="newsViewArea" itemprop="articleBody"><p><p></p>'
+            + '<br />'.join(f'{n}번째 문단은 기사 본문으로 읽혀야 하는 충분히 긴 문장입니다.' for n in range(6))
+            + '</div><div>관련 기사 목록</div></body></html>')
+    parser = SourceHTML()
+    parser.feed(html)
+    assert len(parser.container_lines) == 6 and all('본문' in line for line in parser.container_lines)

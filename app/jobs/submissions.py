@@ -254,4 +254,6 @@ class SubmissionQueue:
         result = self.youtube.upload(job_folder(self.config, job_id))
         if result.get("privacy") != "private":
             raise RuntimeError("자동 제작 영상은 비공개 업로드만 허용합니다.")
-        self._update(key, status="completed", stage="completed", youtube_url=result["url"], error=None)
+        warnings = studio_store.get(self.config, draft["id"]).get("content_warnings") or []
+        self._update(key, status="completed", stage="completed", youtube_url=result["url"],
+                     error=("검토 메모(공개 전 확인): " + "; ".join(warnings))[:1500] if warnings else None)

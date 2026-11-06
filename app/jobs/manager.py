@@ -89,7 +89,12 @@ class Manager:
                 if source is not None or evidence_ready([Evidence.model_validate(e) for e in draft.get("evidence", [])], draft["category"]):
                     draft["evidence"], draft["evidence_search"] = gather(draft, source)
                 issues = validation_issues(draft)
-                if issues:
+                draft["content_warnings"] = []
+                if issues and draft.get("automatic") and draft.get("evidence"):
+                    # Automatic drafts become private previews the user reviews before publishing;
+                    # evidence gaps are recorded as warnings instead of stopping production.
+                    draft["content_warnings"] = issues
+                elif issues:
                     raise ValueError("자동 자료 확인 보류: " + "; ".join(issues))
             draft.update(status="generating", error=None)
             with self.lock:
@@ -132,6 +137,9 @@ class Manager:
             if draft.get("automatic"):
                 from app.media.discovery import ensure_media
                 draft["media_search"] = ensure_media(self.config, script, draft["category"])
+            if draft.get("automatic"):
+                draft["content_warnings"] = list(dict.fromkeys(
+                    [*draft.get("content_warnings", []), *(raw.get("warnings") or [])]))
             draft.update(script=script.model_dump(), status="review", error=None)
         except (RuntimeError, ValueError, OSError) as exc:
             if isinstance(exc, LLMError) and exc.raw is not None:
@@ -185,7 +193,10 @@ class Manager:
                         return job
                     raise ValueError("같은 버전의 실패 작업이 있습니다. 제작 내역에서 재개하세요.")
             issues = validation_issues(draft, Script.model_validate(draft["script"]), require_review=not private_preview)
-            if issues:
+            if issues and private_preview and draft.get("automatic"):
+                # Private automatic previews proceed; the user judges facts before publishing.
+                draft["content_warnings"] = list(dict.fromkeys([*draft.get("content_warnings", []), *issues]))
+            elif issues:
                 raise ValueError("; ".join(issues))
             self._validate_media(draft)
             profile = None

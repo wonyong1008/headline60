@@ -48,6 +48,12 @@ class SourceHTML(HTMLParser):
         self.current_link = None
         self.title = ''
         self.blocks, self.paragraphs, self.content_paragraphs = [], [], []
+        self.container_lines = []
+
+    def feed(self, data):
+        # Newer html.parser reads <noscript> as raw text; an unclosed or tracking-pixel
+        # noscript would then swallow the rest of the page. Its content is never article text.
+        super().feed(re.sub(r'(?is)<noscript\b.*?</noscript\s*>', ' ', data))
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -55,8 +61,11 @@ class SourceHTML(HTMLParser):
             self.meta[attrs.get('property', attrs.get('name', '')).lower()] = attrs.get('content', '')
         if tag == 'a' and attrs.get('href'):
             self.current_link = [attrs['href'], '']
-        specific = bool(set(attrs.get('class', '').split()) & {
-            'se-main-container', 'se_component_wrap', 'view_cont', 'article_view', 'view-cont'}) or attrs.get('id') == 'postViewArea'
+        # Known article containers, including schema.org articleBody used by many Korean news sites.
+        specific = (bool(set(attrs.get('class', '').split()) & {
+            'se-main-container', 'se_component_wrap', 'view_cont', 'article_view', 'view-cont', 'article_body', 'article-body'})
+            or attrs.get('id') in {'postViewArea', 'newsViewArea', 'articleBody', 'article_body', 'articleBodyContents', 'dic_area'}
+            or attrs.get('itemprop') == 'articleBody')
         selected = 2 if specific else 1 if tag in {'article', 'main'} else 0
         if tag not in VOID:
             self.stack.append((tag, selected))
@@ -82,7 +91,8 @@ class SourceHTML(HTMLParser):
                 break
 
     def handle_data(self, data):
-        if any(tag in {'script', 'style', 'noscript', 'nav', 'footer'} for tag, _ in self.stack):
+        # noscript is not skipped: pages often leave it unclosed, which would hide the whole article.
+        if any(tag in {'script', 'style', 'nav', 'footer'} for tag, _ in self.stack):
             return
         value = ' '.join(data.replace('\u200b', '').split())
         if not value:
@@ -92,6 +102,9 @@ class SourceHTML(HTMLParser):
             values.append(value)
         if any(selected for _, selected in self.stack):
             self.body_lines.append(value)
+        if any(selected == 2 for _, selected in self.stack):
+            # Some sites separate paragraphs only with <br>; keep those text runs too.
+            self.container_lines.append(value)
         if any(tag == 'title' for tag, _ in self.stack):
             self.title += value
         if self.current_link:
@@ -112,7 +125,13 @@ def source_page(url: str) -> dict:
     html = data.decode('utf-8', errors='replace')
     parser = SourceHTML()
     parser.feed(html)
-    lines = list(dict.fromkeys(parser.content_paragraphs or parser.paragraphs or parser.body_lines or parser.all_lines))
+    # Prefer whichever reading of the article container holds more text (<p> blocks or <br> runs).
+    # <p> blocks keep sentences whole (Naver splits text into spans); <br>-only articles end up
+    # as one oversized <p>, so then the container's text runs are the real paragraphs.
+    container = parser.content_paragraphs
+    if not container or max(map(len, container)) > 600:
+        container = parser.container_lines or container
+    lines = list(dict.fromkeys(container or parser.paragraphs or parser.body_lines or parser.all_lines))
     if sum(len(line) for line in lines) < 100:
         raise ValueError('요약할 공개 본문을 찾지 못했습니다. 비공개·삭제·접근 제한 여부를 확인하세요.')
     title = parser.meta.get('og:title') or parser.title

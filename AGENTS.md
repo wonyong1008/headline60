@@ -4,7 +4,7 @@
 - 기본 화면은 URL 등록 게시판(URL·아나운서 미포함/포함·등록). 등록 즉시 SQLite 큐 저장, 서버가 순서대로 원문 추출→근거 자동 연결→대본→TTS(1.18)→720p Reels v3→YouTube **비공개** 업로드. 상세: README, docs/AUTOMATION_VALIDATION.md, docs/YOUTUBE.md.
 - 업로드 채널은 Headline.60(`UCEyHtAYXYm5W0F3ueqoeDDQ`)만. `.env`의 `HEADLINE_YOUTUBE_CHANNEL_ID`로 고정하고 업로드마다 실제 채널을 재확인한다. 개인 채널 업로드 금지. 키·토큰은 data/integrations/youtube/에만 두고 출력·커밋하지 않는다.
 - 실제 검증: 정책브리핑 URL → 영상 `Z9YKpG-YzyM`(private) 업로드 성공, 재시도 시 중복 없음. 썸네일은 채널 권한(전화번호 인증) 대기.
-- 자동 대본 검사(수치·길이·반말·중복)는 끄지 않는다. 실패 시 피드백 재시도 최대 3회. 근거 ID는 내부 자동 연결. 의미 수준 검증은 사람이 한다.
+- 사용자 지시(2026-11-06): 사실관계는 사용자가 공개 전 판단한다. 자동 제작은 근거·수치·원문 대조 문제로 실패시키지 않고 검토 메모로 남기며 끝까지 진행한다(private 업로드). 피드백 재시도 최대 3회, 반말 허용. 근거 ID는 내부 자동 연결.
 - 아나운서는 선택형 실험. 기존 모델·자산 삭제 금지. 정지 이미지+입 주변 합성의 한계가 있으며 모션 모델 추가는 사용자 승인 후.
 - 음성 억양 A/B 샘플(data/voice_samples/ab-intonation-20261106T180820) 사용자 청취 판정 대기. 판정 전 기본 음성 설정 변경 금지.
 - 공개 저장소: github.com/wonyong1008/headline60. data/·outputs/·모델·영상·인증정보는 .gitignore로 제외. push 전 비밀키 검사, force push 금지.

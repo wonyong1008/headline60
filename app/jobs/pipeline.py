@@ -46,6 +46,10 @@ def prepare_news(config: Settings, request: VideoRequest, script: Script, contex
         raise ValueError("콘텐츠 모드와 영상 제작 설정이 일치해야 합니다.")
     preview = private_preview(context)
     issues = validation_issues(context, script, require_review=not preview)
+    if preview and context.get("automatic"):
+        # Automatic private previews are judged by the user before publishing; keep issues as warnings.
+        context["content_warnings"] = list(dict.fromkeys([*context.get("content_warnings", []), *issues]))
+        issues = []
     if issues or (not preview and (not context.get("approved_revision") or context.get("approved_revision") != context.get("revision"))):
         raise ValueError("; ".join(issues) or "대본 검토 승인이 필요합니다.")
     job_id = datetime.now().strftime("%Y%m%dT%H%M%S-") + uuid4().hex[:8]

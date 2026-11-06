@@ -12,6 +12,14 @@ from app.studio_models import Evidence, numeric_tokens, script_issues
 MAX_ATTEMPTS = 3
 
 
+class ContentIssues(ValueError):
+    """A complete, renderable draft whose content checks found problems (warnings, not failures)."""
+
+    def __init__(self, issues, script, raw):
+        super().__init__('; '.join(issues))
+        self.issues, self.script, self.raw = issues, script, raw
+
+
 class Shot(BaseModel):
     model_config = ConfigDict(extra='forbid')
     headline: str = Field(min_length=2, max_length=24)
@@ -178,17 +186,25 @@ source_outline는 원문에 소개된 항목 이름이다. 이 항목들을 적�
 영어 자료는 정확히 한국어로 설명하라. 한자/영어 문장을 섞거나 문장을 중간에 끊지 마라.
 검증할 수 없는 건강 효과는 생략하고 확인된 범위와 한계를 설명한다.
 자료: {json.dumps(material, ensure_ascii=False)}'''
-    raw, feedback, last = None, '', None
+    raw, feedback, last, best = None, '', None, None
     for attempt in range(MAX_ATTEMPTS):
         try:
             return _attempt(draft, config, evidence, count, schema, prompt + feedback, attempt)
         except LLMError as exc:
             last, raw = exc, exc.raw
+            found = exc.__cause__
+            if isinstance(found, ContentIssues) and (best is None or len(found.issues) < len(best.issues)):
+                best = found
             # One bounded retry with the concrete validation problems; never loop indefinitely.
             feedback = ('\n이전 초안이 검사에서 거절됐다: ' + str(exc)[:400]
                         + '\n자료에 그대로 있는 수치만 쓰고, 각 장면 source는 그 수치가 들어 있는 자료 번호로 지정하라. 헤드라인은 장면마다 다르게 16자 이내로 쓰고, 원문 문장의 대상·기간·조건을 그대로 쓰고, 다른 자료를 \'이를 통해\'·\'~되도록\'처럼 원인·목적으로 잇지 마라.')
             if isinstance(exc.__cause__, httpx.HTTPError):
                 break  # Ollama unreachable/failed: retrying the prompt cannot help.
+    if best is not None:
+        # The user reviews facts before publishing: keep the most consistent complete draft
+        # and pass the remaining check results along as review warnings instead of failing.
+        best.raw['warnings'] = best.issues
+        return best.script, best.raw
     raise last if last else LLMError('자동 대본 생성 실패', raw=raw)
 
 
@@ -253,12 +269,12 @@ def _attempt(draft, config, evidence, count, schema, prompt, attempt):
             issues.append('한국어 대본에 한자가 섞였습니다.')
         issues += faithfulness_issues(scenes, evidence)
         if issues:
-            raise ValueError('; '.join(issues))
+            raise ContentIssues(issues, script, raw)
         # Only drafts that pass every deterministic check spend a second local-model call.
         problems, verdict = model_check(scenes, evidence, config)
         raw['fact_check'] = {'response': verdict.get('response'), 'issues': problems}
         if problems:
-            raise ValueError('; '.join(problems))
+            raise ContentIssues(problems, script, raw)
         return script, raw
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         raise LLMError(f'자동 대본 생성 실패: {exc}', raw=raw) from exc
