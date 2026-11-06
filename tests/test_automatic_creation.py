@@ -369,3 +369,20 @@ def test_source_markers_are_stripped_and_long_hook_uses_article_headline(monkeyp
     script, _ = automatic_writer.generate_automatic(draft, Settings())
     assert script.hook == '도심 주택 공급, 계획일까 실적일까?'
     assert all('source' not in s.narration + s.headline for s in script.scenes)
+
+
+def test_casual_speech_level_is_not_a_rejection_reason(monkeypatch):
+    from app.llm import automatic_writer
+    source = automatic.excerpts(page(), '주택 공급')[0]
+    story = {'title': '주택 공급 계획', 'scenes': [
+        {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까?', 'source': 0, 'visual_query': '아파트'},
+        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 게 먼저야.', 'source': 0, 'visual_query': '아파트 단지'},
+        {'headline': '계획의 의미', 'narration': '발표된 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어.', 'source': 0, 'visual_query': '주택 건설'},
+        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 게 이번 자료의 핵심이지.', 'source': 0, 'visual_query': '아파트 전경'}]}
+    original = httpx.Client
+    def respond(request):
+        checking = 'checks' in json.loads(request.content)['format']['properties']
+        return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': all_faithful(4) if checking else json.dumps(story)})
+    monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
+    script, _ = automatic_writer.generate_automatic({'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급'}, Settings())
+    assert script.scenes[1].narration.endswith('먼저야.')

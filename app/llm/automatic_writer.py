@@ -186,7 +186,7 @@ source_outline는 원문에 소개된 항목 이름이다. 이 항목들을 적�
             last, raw = exc, exc.raw
             # One bounded retry with the concrete validation problems; never loop indefinitely.
             feedback = ('\n이전 초안이 검사에서 거절됐다: ' + str(exc)[:400]
-                        + '\n자료에 그대로 있는 수치만 쓰고, 각 장면 source는 그 수치가 들어 있는 자료 번호로 지정하라. 헤드라인은 장면마다 다르게 16자 이내로 쓰고, 문장은 모두 해요체(~요)로 끝낸다. 원문 문장의 대상·기간·조건을 그대로 쓰고, 다른 자료를 \'이를 통해\'·\'~되도록\'처럼 원인·목적으로 잇지 마라.')
+                        + '\n자료에 그대로 있는 수치만 쓰고, 각 장면 source는 그 수치가 들어 있는 자료 번호로 지정하라. 헤드라인은 장면마다 다르게 16자 이내로 쓰고, 원문 문장의 대상·기간·조건을 그대로 쓰고, 다른 자료를 \'이를 통해\'·\'~되도록\'처럼 원인·목적으로 잇지 마라.')
             if isinstance(exc.__cause__, httpx.HTTPError):
                 break  # Ollama unreachable/failed: retrying the prompt cannot help.
     raise last if last else LLMError('자동 대본 생성 실패', raw=raw)
@@ -248,9 +248,7 @@ def _attempt(draft, config, evidence, count, schema, prompt, attempt):
         headlines = [s.headline for s in scenes]
         if len(set(headlines)) < len(headlines):
             issues.append('장면 헤드라인이 반복됩니다. 장면마다 다른 헤드라인을 쓰세요.')
-        if any(re.search(r'(?:야|어|지|니|냐|가)[.?!]?$', sentence.strip()) for text in texts[1:]
-               for sentence in re.split(r'(?<=[.?!])\s+', text) if sentence.strip()):
-            issues.append('반말 어미가 있습니다. 해요체로 쓰세요.')
+        # Speech level (반말/해요체) is a style choice, never a reason to reject a draft.
         if re.search(r'[\u3400-\u9fff]', script.model_dump_json()):
             issues.append('한국어 대본에 한자가 섞였습니다.')
         issues += faithfulness_issues(scenes, evidence)
