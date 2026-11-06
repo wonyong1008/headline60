@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     tts_rate: int = 185
     encoder: str = "h264_videotoolbox"
     port: int = 8060
+    # Default is this Mac only. Set HEADLINE_HOST=0.0.0.0 to open the admin page on the LAN;
+    # HEADLINE_ALLOWED_HOSTS then lists the LAN IP/name other devices type in the address bar.
+    host: str = "127.0.0.1"
+    allowed_hosts: list[str] = []
     # Uploads are refused unless the authorized account owns exactly this channel (when set).
     youtube_channel_id: str = ""
     font: Path = Path("/System/Library/Fonts/AppleSDGothicNeo.ttc")

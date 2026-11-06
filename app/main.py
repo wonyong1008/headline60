@@ -54,7 +54,7 @@ async def lifespan(application: FastAPI):
 
 
 app = FastAPI(title="HEADLINE 60", version="0.2.0", lifespan=lifespan)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "[::1]", "testserver"])
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "[::1]", "testserver", *settings.allowed_hosts])
 app.mount("/static", StaticFiles(directory=settings.root / "static"), name="static")
 templates = Jinja2Templates(directory=settings.root / "templates")
 app.include_router(make_router(settings))
