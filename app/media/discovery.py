@@ -27,7 +27,8 @@ CATEGORY_QUERIES = {'realestate': 'apartment buildings Seoul', 'economy': 'stock
 # Backgrounds must be photographs; diagrams, maps and logos read as clutter behind text.
 NOT_PHOTO = re.compile(r'chart|graph|diagram|\bmaps?\b|logo|icon|screenshot|comparison|table|\bplot|infographic|'
                        r'\bflag|coat of arms|\bseal\b|drawing|illustration|poster|document|\bscan|cartoon|sketch|sticker|anti-|banner', re.IGNORECASE)
-GRIM = re.compile(r'crash|accident|burn|destroy|wreck|\bdead|corpse|blood|\bwar\b|memorial|funeral|\bfire\b|protest|riot', re.IGNORECASE)
+GRIM = re.compile(r'crash|accident|burn|destroy|wreck|\bdead|corpse|blood|\bwar\b|memorial|funeral|\bfire\b|protest|riot|'
+                  r'ardea|heron|\bbird|\binsect|spider|snake', re.IGNORECASE)
 ABSTRACT = {'price', 'prices', 'decline', 'drop', 'rise', 'fall', 'increase', 'decrease', 'market', 'markets', 'comparison',
             'competition', 'policy', 'regulation', 'growth', 'trend', 'crisis', 'pressure', 'economy', 'cost', 'costs',
             'value', 'rate', 'rates', 'analysis', 'impact', 'effect', 'concept', 'news', 'issue', 'problem', 'risk'}
@@ -87,7 +88,7 @@ def search(query: str, require_korea: bool = False) -> list[dict]:
         content_words = [word for word in terms(query) if word not in GENERIC and len(word) >= 3]
         if content_words and not any(word in haystack for word in content_words):
             continue
-        if (require_korea or 'korea' in query.lower()) and not KOREA.search(haystack):
+        if (require_korea or KOREA.search(query.lower())) and not KOREA.search(haystack):
             continue  # Korean politics/news must not be illustrated with another country's parliament
         if min(info.get('width', 0), info.get('height', 0)) < 640:
             continue
