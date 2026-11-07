@@ -62,7 +62,7 @@ def profiles(config: Settings) -> list[dict]:
                  "thumbnail_url": f"/api/anchors/{ANCHOR_ID}/thumbnail",
                  "thumbnail_path": str(image), "placement": "intro_outro",
                  "segment_seconds": 3, "fallback": "자료화면",
-                 "description": "승인된 가상 성인 이미지의 입 주변만 합성합니다. 몸 동작은 생성하지 않습니다."}]
+                 "description": "승인된 가상 성인 진행자를 장면 사진 위에 합성하고 영상마다 다른 의상을 입힙니다. 입 주변만 합성하며 몸 동작은 생성하지 않습니다."}]
     except (OSError, ValueError, KeyError):
         return []
 
@@ -157,7 +157,10 @@ def prepare_presenter(plan: dict, folder: Path, config: Settings, anchor_id: str
     started = time.perf_counter()
     try:
         check_cancel()
-        _metadata, image = _approved(config, anchor_id)
+        _metadata, approved_image = _approved(config, anchor_id)
+        from app.anchors.wardrobe import outfit_for_video
+        look, image = outfit_for_video(config, approved_image)  # a different outfit per video
+        status.update(look=look, outfit_image=str(image))
         audio = Path(plan["audio_path"])
         total = sum(round(scene["duration"] * 30) for scene in plan["scenes"]) / 30
         intervals = presenter_intervals(total)

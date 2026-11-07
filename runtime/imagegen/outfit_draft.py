@@ -22,6 +22,19 @@ ROOT = Path(__file__).resolve().parents[2]
 MODEL = ROOT / "data/models/flux2-klein-4b"
 REFERENCE = ROOT / "data/anchors/benchmark-input/reference.png"
 LOOKS = {
+    "shirt-dress-studio": (
+        "Use the reference image ONLY for camera framing and pose: a head-to-knees photograph of a "
+        "fictional ADULT Korean female news presenter in her mid-twenties, standing upright facing "
+        "the camera, arms relaxed, full head visible with space above, both knees visible with space "
+        "below. A NEW natural face: soft oval face, clear gentle eyes, light natural makeup, calm "
+        "confident expression with a slight smile, long dark-brown hair neatly styled. Outfit: an "
+        "elegant, modest tailored shirt dress in soft ivory or light beige, collared with a buttoned "
+        "front, three-quarter or long sleeves, a slim fabric belt at the natural waist, A-line skirt "
+        "ending just below the knee. Polished broadcast-journalist look, no exposed midriff, no "
+        "shorts. Minimal small earrings. Modern news studio background with soft blue screens and "
+        "flattering natural studio light. Photorealistic editorial portrait, natural anatomy, sharp "
+        "focus on the face. No text, no logos."
+    ),
     "brown-anchor-identity-lowrise": (
         "Extend the REFERENCE PORTRAIT into a head-to-knees fashion photograph of the EXACT SAME "
         "fictional ADULT female news presenter. Her approved face is the highest priority: preserve "
@@ -124,7 +137,10 @@ def main() -> int:
     parser.add_argument("--width", type=int, default=720)
     parser.add_argument("--height", type=int, default=1280)
     parser.add_argument("--quantize", type=int, choices=[4, 8], default=8)
+    parser.add_argument("--prompt", help="Custom prompt (overrides --look); used by the wardrobe generator.")
+    parser.add_argument("--output-dir", type=Path, help="Write draft.png here instead of a new outfit-drafts folder.")
     args = parser.parse_args()
+    prompt = args.prompt or LOOKS[args.look]
     reference = args.reference.expanduser().resolve()
     if not reference.is_file():
         raise SystemExit("Reference image file is missing.")
@@ -137,12 +153,13 @@ def main() -> int:
     if not (MODEL / "headline60-model.json").is_file():
         raise SystemExit("모델이 없습니다. runtime/imagegen/download_model.py를 먼저 실행하세요.")
     record = json.loads((MODEL / "headline60-model.json").read_text(encoding="utf-8"))
-    folder = ROOT / "data/anchors/outfit-drafts" / f"draft-{datetime.now():%Y%m%dT%H%M%S}"
+    folder = args.output_dir.expanduser().resolve() if args.output_dir else (
+        ROOT / "data/anchors/outfit-drafts" / f"draft-{datetime.now():%Y%m%dT%H%M%S}")
     folder.mkdir(parents=True, exist_ok=False)  # never reuse or overwrite a draft folder
     output = folder / "draft.png"
     request = {
         "kind": "outfit_draft_experiment_not_production",
-        "look": args.look, "prompt": LOOKS[args.look], "seed": args.seed,
+        "look": args.look if not args.prompt else "custom", "prompt": prompt, "seed": args.seed,
         "width": args.width, "height": args.height, "steps": 4, "guidance": 1.0,
         "quantize": args.quantize, "low_ram": True,
         "reference_image": str(reference), "reference_sha256": sha256(reference),
@@ -155,7 +172,7 @@ def main() -> int:
     command = [str(Path(sys.executable).with_name("mflux-generate-flux2-edit")),
                "--model", str(MODEL), "--base-model", "flux2-klein-4b",
                "--quantize", str(args.quantize), "--low-ram",
-               "--image-paths", *map(str, references), "--prompt", LOOKS[args.look],
+               "--image-paths", *map(str, references), "--prompt", prompt,
                "--seed", str(args.seed), "--width", str(args.width), "--height", str(args.height),
                "--steps", "4", "--output", str(output)]
     env = {**os.environ, "HF_HUB_OFFLINE": "1", "HF_HUB_DISABLE_TELEMETRY": "1"}

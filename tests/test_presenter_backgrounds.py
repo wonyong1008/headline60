@@ -199,3 +199,26 @@ def test_chart_and_panel_never_cover_the_presenter(tmp_path):
     with Image.open(fixed) as overlay:
         assert overlay.getpixel((300, 400))[3] < 120  # no dark panel over the presenter's body
     assert next(layer for layer in layers if layer["animation"] == "chart_reveal")["hide_with_presenter"]
+
+
+def test_wardrobe_rotates_outfits_and_caches_each_look(tmp_path, monkeypatch):
+    from app.anchors import wardrobe
+    config = Settings(root=tmp_path)
+    approved = tmp_path / "approved.png"
+    Image.new("RGB", (720, 1280), "white").save(approved)
+    generated = []
+
+    def fake_generate(config, look, approved_image):
+        generated.append(look)
+        folder = wardrobe.wardrobe_root(config) / look
+        folder.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (720, 1280), "pink").save(folder / "presenter.png")
+        return folder / "presenter.png"
+
+    monkeypatch.setattr(wardrobe, "generate_look", fake_generate)
+    picks = [wardrobe.outfit_for_video(config, approved)[0] for _ in range(len(wardrobe.LOOKS) + 1)]
+    assert picks[:len(wardrobe.LOOKS)] == list(wardrobe.LOOKS) and picks[-1] == picks[0]  # rotation
+    monkeypatch.setattr(wardrobe, "generate_look", lambda *a: (_ for _ in ()).throw(RuntimeError("no model")))
+    look, image = wardrobe.outfit_for_video(config, approved)
+    assert look == "approved-default" and image == approved  # failure keeps the video going
+    assert (wardrobe.wardrobe_root(config) / "failures.jsonl").is_file()
