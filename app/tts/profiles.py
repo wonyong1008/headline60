@@ -18,6 +18,7 @@ class VoiceProfile(BaseModel):
     speaker: str
     language: str = "Korean"
     style_prompt: str = ""
+    previous_style_prompt: str | None = None  # plainer instruction the TTS worker retries with
     speed: float = Field(default=1, ge=0.8, le=1.2)
     generation_parameters: dict = Field(default_factory=lambda: {"seed": 42, "temperature": 0.9, "top_p": 1, "top_k": 50})
     phrasing: Literal["phrase", "continuous"] = "phrase"

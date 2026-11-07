@@ -101,6 +101,7 @@ def synthesize(script: Script | SpeechDocument, folder: Path, config: Settings, 
             raise TTSError("TTS 작업에 필요한 디스크 여유 공간이 부족합니다.")
         request = {"model_path": str(config.data / "models/qwen3-tts-1.7b-8bit"),
                    "speaker": profile["speaker"], "style_prompt": profile["style_prompt"],
+                   "fallback_style_prompt": profile.get("previous_style_prompt") or None,
                    **profile["generation_parameters"],
                    "items": [{"id": item["id"], "text": item["spoken"], "output": str(item["raw"])} for item in pending],
                    "metrics_path": str(folder / "mlx-metrics.json"), "max_tokens": 450}

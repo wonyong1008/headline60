@@ -57,7 +57,8 @@ def normalize(text: str, lexicon: dict[str, str] | None = None) -> str:
              "%": "퍼센트", "퍼센트": "퍼센트", "조": "조", "억": "억", "만": "만",
              "원": "원", "건": "건", "배": "배", "년": "년", "일": "일",
              "개월": "개월", "mg": "밀리그램", "㎎": "밀리그램", "kg": "킬로그램",
-             "km": "킬로미터", "㎞": "킬로미터"}
+             "km": "킬로미터", "㎞": "킬로미터", "명": "명", "호": "호", "개": "개", "세": "세",
+             "곳": "곳", "회": "회", "차": "차", "대": "대", "곡": "곡", "편": "편"}
     # Match longest units first; never pronounce only a prefix of an unknown
     # Latin/composite unit (e.g. mg/dL, km/hours or %point).
     unit_pattern = "|".join(re.escape(unit) for unit in sorted(units, key=len, reverse=True))
