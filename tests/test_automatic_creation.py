@@ -598,7 +598,7 @@ def test_photo_captions_and_bylines_are_not_evidence_and_queries_try_korea_first
     assert found[0]['fact'].startswith('국회는 6일 본회의') and not any('기자 =' in f['fact'] for f in found)
     scene = Scene(headline='국회', narration='국회 본회의 이야기를 해요.', visual_query='국회 / parliament hall')
     variants = discovery.query_variants(scene, 'politics')
-    assert variants[0] == 'National Assembly building Yeouido Seoul' and discovery.query_variants(scene, 'politics', 1)[0] == 'Cheong Wa Dae Blue House Seoul'
+    assert variants[0] == 'National Assembly building Yeouido Seoul' and discovery.query_variants(scene, 'politics', 1)[0] == 'Blue House Seoul'
     economy = discovery.query_variants(Scene(headline='금리', narration='금리 이야기를 해요.', visual_query='은행 / bank counter'), 'economy')
     assert economy[0] == 'bank counter Korea' and economy[-1] == 'stock exchange trading screen'
 
