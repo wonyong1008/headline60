@@ -101,12 +101,15 @@ def query_variants(scene, category: str) -> list[str]:
     """Scene query, then the same without abstract words, then a topic-level photo."""
     first = query_for(scene)
     words = [w for w in first.split() if w.lower() not in ABSTRACT]
-    # Commons matches every word, so long queries often return nothing; try shorter subjects too.
-    shorter = [' '.join(words[:2]), ' '.join(words[-2:])] if len(words) > 2 else []
-    base = [q for q in (first, ' '.join(words), *shorter) if q]
-    # Korean news deserves Korean scenes: try each subject with "Korea" before the plain subject.
-    korean = [f'{q} Korea' for q in base if 'korea' not in q.lower() and 'seoul' not in q.lower()]
-    return list(dict.fromkeys([*korean, *base, CATEGORY_QUERIES.get(category, CATEGORY_QUERIES['trending'])]))
+    # Commons matches every word, so long queries often return nothing; try a shorter subject too.
+    base = list(dict.fromkeys(q for q in (first, ' '.join(words), ' '.join(words[:2]) if len(words) > 2 else '') if q))[:3]
+    # Korean news deserves Korean scenes: each subject with "Korea" first, then plain.
+    ordered = []
+    for q in base:
+        if 'korea' not in q.lower() and 'seoul' not in q.lower():
+            ordered.append(f'{q} Korea')
+        ordered.append(q)
+    return list(dict.fromkeys([*ordered, CATEGORY_QUERIES.get(category, CATEGORY_QUERIES['trending'])]))
 
 
 def ensure_media(config: Settings, script, category: str) -> dict:
@@ -124,7 +127,7 @@ def ensure_media(config: Settings, script, category: str) -> dict:
             scene.asset_id = match['asset_id']
             continue
         for query in query_variants(scene, category):
-            if offline or len(searched) >= 14 or time.perf_counter() - started > 75:
+            if offline or len(searched) >= 40 or time.perf_counter() - started > 150:
                 break
             if query not in results:
                 searched.add(query)
@@ -169,7 +172,10 @@ def ensure_media(config: Settings, script, category: str) -> dict:
             # Last resort: any approved photo in the library, so no scene falls back to a plain graphic.
             pool = [a for a in listing(config) if a['usage_status'] == 'approved' and a['media_type'] == 'image'
                     and not NOT_PHOTO.search(a.get('name', '')) and a['asset_id'] not in used]
-            pool.sort(key=lambda a: (a['category'] != category, a.get('created_at', '')))
+            def neutral(asset):  # city/landscape scenes read fine behind any topic; pills or cars do not
+                text = ' '.join([asset.get('name', ''), asset.get('description', ''), *asset.get('tags', [])]).lower()
+                return not re.search(r'seoul|korea|city|street|skyline|river|park|building', text)
+            pool.sort(key=lambda a: (neutral(a), a['category'] != category, a.get('created_at', '')))
             if pool:
                 used.add(pool[0]['asset_id'])
                 scene.asset_id = pool[0]['asset_id']

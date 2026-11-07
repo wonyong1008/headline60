@@ -443,7 +443,7 @@ def test_each_scene_gets_its_own_pinned_photo_and_charts_are_skipped(tmp_path, m
     report = discovery.ensure_media(Settings(root=tmp_path), script, 'auto')
     ids = [scene.asset_id for scene in script.scenes]
     assert all(ids) and len(set(ids)) == 4 and len(report['imported']) == 4
-    assert queries[:2] == ['used car price decline Korea', 'used car Korea']  # Korea first, abstract words dropped
+    assert queries[:2] == ['used car price decline Korea', 'used car price decline']  # Korea first
     assert discovery.NOT_PHOTO.search('File:BEV EPA range comparison 2016-2017.png')
 
 
@@ -464,8 +464,8 @@ def test_long_photo_queries_fall_back_to_two_word_subjects():
     from app.script.models import Scene
     scene = Scene(headline='약국', narration='약국 진열대 이야기를 해요.', visual_query='약국 진열대 / pharmacy shelf weight loss pills')
     assert discovery.query_variants(scene, 'health') == [
-        'pharmacy shelf weight loss pills Korea', 'pharmacy shelf Korea', 'loss pills Korea',
-        'pharmacy shelf weight loss pills', 'pharmacy shelf', 'loss pills', 'pharmacy medicine shelf']
+        'pharmacy shelf weight loss pills Korea', 'pharmacy shelf weight loss pills',
+        'pharmacy shelf Korea', 'pharmacy shelf', 'pharmacy medicine shelf']
 
 
 def test_one_minute_drafts_take_up_to_eight_excerpts_from_the_article(monkeypatch):
