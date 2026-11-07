@@ -23,7 +23,7 @@ LICENSE_URLS = {'CC0': 'https://creativecommons.org/publicdomain/zero/1.0/',
 # When a scene's own search finds nothing, a topic-level photo still beats a plain graphic.
 CATEGORY_QUERIES = {'realestate': 'apartment buildings Seoul', 'economy': 'stock exchange trading screen',
                     'auto': 'cars parking lot', 'health': 'pharmacy medicine shelf',
-                    'trending': 'Seoul city street', 'tech': 'smartphone'}
+                    'politics': 'National Assembly building Seoul', 'trending': 'Seoul city street', 'tech': 'smartphone'}
 # Backgrounds must be photographs; diagrams, maps and logos read as clutter behind text.
 NOT_PHOTO = re.compile(r'chart|graph|diagram|\bmaps?\b|logo|icon|screenshot|comparison|table|\bplot|infographic|'
                        r'\bflag|coat of arms|\bseal\b|drawing|illustration|poster|document|\bscan|cartoon|sketch', re.IGNORECASE)
@@ -31,6 +31,8 @@ GRIM = re.compile(r'crash|accident|burn|destroy|wreck|\bdead|corpse|blood|\bwar\
 ABSTRACT = {'price', 'prices', 'decline', 'drop', 'rise', 'fall', 'increase', 'decrease', 'market', 'markets', 'comparison',
             'competition', 'policy', 'regulation', 'growth', 'trend', 'crisis', 'pressure', 'economy', 'cost', 'costs',
             'value', 'rate', 'rates', 'analysis', 'impact', 'effect', 'concept', 'news', 'issue', 'problem', 'risk'}
+GENERIC = {'photo', 'image', 'file', 'jpg', 'jpeg', 'view', 'picture', 'scene', 'shot', 'close', 'closeup', 'background',
+           'city', 'street', 'building', 'people', 'person', 'man', 'woman', 'day', 'night'} | ABSTRACT
 DOWNLOAD_HOSTS = {'upload.wikimedia.org', 'thumb.wikimedia.org'}
 EXPLICIT = re.compile(r'nud[ei]|naked|porn|sexual intercourse|genital|penis|vulva|vagina|masturbat|노출|성기|나체', re.IGNORECASE)
 
@@ -75,8 +77,12 @@ def search(query: str) -> list[dict]:
             continue
         if meta.get('NonFree', {}).get('value') == 'true' or value('Restrictions'):
             continue
-        # Search relevance remains required even when the license is acceptable.
-        if not any(word in (name + ' ' + description).lower() for word in terms(query)):
+        # Search relevance remains required even when the license is acceptable: at least one
+        # content word of the query (not a generic/abstract word) must appear in the file's name
+        # or description, so 'pill bottle' never answers a query about an approval poll.
+        haystack = (name + ' ' + description).lower()
+        content_words = [word for word in terms(query) if word not in GENERIC and len(word) >= 3]
+        if content_words and not any(word in haystack for word in content_words):
             continue
         if min(info.get('width', 0), info.get('height', 0)) < 640:
             continue

@@ -75,7 +75,9 @@ class Manager:
         from app.studio_models import Evidence, evidence_ready
         try:
             source = None
-            if draft.get("source_url") and (not draft.get("source_loaded") or draft.get("source_extract_version") != SOURCE_EXTRACT_VERSION):
+            unreviewed_only = not any(e.get("reviewed") for e in draft.get("evidence", []))
+            if draft.get("source_url") and (not draft.get("source_loaded") or draft.get("source_extract_version") != SOURCE_EXTRACT_VERSION
+                                            or (unreviewed_only and not draft.get("evidence"))):
                 source = source_page(draft["source_url"])
                 if draft.get("source_extract_version") != SOURCE_EXTRACT_VERSION:
                     draft["evidence"] = [e for e in draft.get("evidence", []) if e.get("verification") != "source_matched" or e.get("reviewed")]

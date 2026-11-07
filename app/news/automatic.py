@@ -13,12 +13,13 @@ from app.news.sources import SourceHTML, fetch_public, source_page, terms
 
 ED_SOURCE = 'https://www.niddk.nih.gov/health-information/urologic-diseases/erectile-dysfunction/treatment'
 # Bump when extraction changes; unreviewed automatic evidence is then rebuilt.
-SOURCE_EXTRACT_VERSION = 4
+SOURCE_EXTRACT_VERSION = 5
 HEALTH = re.compile(r'건강|의약|치료|부작용|발기|정력|케겔|피임|임신|다이어트|탈모|영양제')
 
 
 def category_for(text: str) -> str:
     for category, pattern in [('health', HEALTH), ('realestate', re.compile(r'부동산|아파트|주택|전세')),
+                               ('politics', re.compile(r'대통령|국회|여당|야당|민주당|국민의힘|지지율|선거|특검|장관|정부안|법안')),
                                ('auto', re.compile(r'자동차|신차|전기차')), ('economy', re.compile(r'금리|대출|은행|경제'))]:
         if pattern.search(text):
             return category

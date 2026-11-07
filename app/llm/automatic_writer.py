@@ -268,7 +268,7 @@ source_outline는 원문에 소개된 항목 이름이다. 이 항목들을 적�
     feedback, last, best = '', None, None
     for attempt in range(MAX_ATTEMPTS):
         try:
-            return _attempt(draft, config, evidence, count, schema, prompt + feedback, attempt)
+            return _attempt(draft, config, evidence, count, schema, prompt + feedback, attempt, list_mode)
         except LLMError as exc:
             last = exc
             found = exc.__cause__
@@ -288,7 +288,7 @@ source_outline는 원문에 소개된 항목 이름이다. 이 항목들을 적�
     return fallback_script(draft, evidence, count, str(last) if last else '응답 없음')
 
 
-def _attempt(draft, config, evidence, count, schema, prompt, attempt):
+def _attempt(draft, config, evidence, count, schema, prompt, attempt, list_mode=False):
     raw = None
     try:
         with httpx.Client(timeout=180, trust_env=False) as client:
@@ -319,6 +319,9 @@ def _attempt(draft, config, evidence, count, schema, prompt, attempt):
         elif len(result.scenes[0].narration) > 36 and 8 <= len(lead) <= 36:
             # Fall back to the input article's own headline clause rather than inventing a hook.
             result.scenes[0].narration = lead
+        if list_mode and re.match(r'^\s*1[.)]', result.scenes[0].headline):
+            # The hook introduces the whole list; item 1 gets its own scene right after.
+            result.scenes[0].headline = _clip(draft.get('topic') or result.title, 24) or result.title[:24]
         scenes = []
         for i, shot in enumerate(result.scenes):
             if shot.source >= len(evidence):
