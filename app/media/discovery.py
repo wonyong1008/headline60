@@ -84,6 +84,8 @@ def search(query: str) -> list[dict]:
         content_words = [word for word in terms(query) if word not in GENERIC and len(word) >= 3]
         if content_words and not any(word in haystack for word in content_words):
             continue
+        if 'korea' in query.lower() and not re.search(r'korea|seoul|busan|incheon|daegu|한국|서울', haystack):
+            continue  # a "… Korea" query must not be answered with another country's scene
         if min(info.get('width', 0), info.get('height', 0)) < 640:
             continue
         download = info.get('thumburl') or info.get('url', '')
@@ -101,8 +103,10 @@ def query_variants(scene, category: str) -> list[str]:
     words = [w for w in first.split() if w.lower() not in ABSTRACT]
     # Commons matches every word, so long queries often return nothing; try shorter subjects too.
     shorter = [' '.join(words[:2]), ' '.join(words[-2:])] if len(words) > 2 else []
-    return list(dict.fromkeys(q for q in (first, ' '.join(words), *shorter,
-                                          CATEGORY_QUERIES.get(category, CATEGORY_QUERIES['trending'])) if q))
+    base = [q for q in (first, ' '.join(words), *shorter) if q]
+    # Korean news deserves Korean scenes: try each subject with "Korea" before the plain subject.
+    korean = [f'{q} Korea' for q in base if 'korea' not in q.lower() and 'seoul' not in q.lower()]
+    return list(dict.fromkeys([*korean, *base, CATEGORY_QUERIES.get(category, CATEGORY_QUERIES['trending'])]))
 
 
 def ensure_media(config: Settings, script, category: str) -> dict:

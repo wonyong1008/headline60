@@ -443,7 +443,7 @@ def test_each_scene_gets_its_own_pinned_photo_and_charts_are_skipped(tmp_path, m
     report = discovery.ensure_media(Settings(root=tmp_path), script, 'auto')
     ids = [scene.asset_id for scene in script.scenes]
     assert all(ids) and len(set(ids)) == 4 and len(report['imported']) == 4
-    assert queries[:2] == ['used car price decline', 'used car']  # abstract words dropped on retry
+    assert queries[:2] == ['used car price decline Korea', 'used car Korea']  # Korea first, abstract words dropped
     assert discovery.NOT_PHOTO.search('File:BEV EPA range comparison 2016-2017.png')
 
 
@@ -464,6 +464,7 @@ def test_long_photo_queries_fall_back_to_two_word_subjects():
     from app.script.models import Scene
     scene = Scene(headline='약국', narration='약국 진열대 이야기를 해요.', visual_query='약국 진열대 / pharmacy shelf weight loss pills')
     assert discovery.query_variants(scene, 'health') == [
+        'pharmacy shelf weight loss pills Korea', 'pharmacy shelf Korea', 'loss pills Korea',
         'pharmacy shelf weight loss pills', 'pharmacy shelf', 'loss pills', 'pharmacy medicine shelf']
 
 
@@ -586,3 +587,22 @@ def test_politics_category_and_photo_relevance_filter(monkeypatch):
     monkeypatch.setattr(discovery, 'fetch_public', lambda url, **k: (url, json.dumps(payload).encode(), 'application/json'))
     names = [r['name'] for r in discovery.search('national assembly seoul')]
     assert names == ['File:National Assembly Seoul.jpg']  # the pill bottle shares no content word with the query
+
+
+def test_photo_captions_and_bylines_are_not_evidence_and_queries_try_korea_first():
+    from app.media import discovery
+    from app.script.models import Scene
+    lines = ['(서울=연합뉴스) 한상균 기자 = 6일 국회 본회의에서 특검법안 통과 화면이 나오고 있다. 2026.11.6 xyz@yna.co.kr',
+             '국회는 6일 본회의에서 조작기소 특검법안을 무제한 토론 종료 후 표결로 통과시켰다고 밝혔습니다.']
+    found = automatic.excerpts({**page(), 'lines': lines}, '특검법안 국회 통과')
+    assert found[0]['fact'].startswith('국회는 6일 본회의') and not any('기자 =' in f['fact'] for f in found)
+    scene = Scene(headline='국회', narration='국회 본회의 이야기를 해요.', visual_query='국회 / parliament hall')
+    variants = discovery.query_variants(scene, 'politics')
+    assert variants[0] == 'parliament hall Korea' and 'parliament hall' in variants and variants[-1] == 'National Assembly building Seoul'
+
+
+def test_newspaper_hanja_is_read_in_korean_for_tts():
+    from app.tts.text import normalize
+    assert normalize('조작기소 특검법안, 與주도로 국회통과') == '조작기소 특검법안, 여주도로 국회통과'
+    assert normalize('李대통령 지지율 2%P 올라').startswith('이대통령')
+    assert '龍' not in normalize('龍 모양')

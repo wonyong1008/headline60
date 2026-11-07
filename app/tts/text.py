@@ -35,11 +35,21 @@ def read_number(value: str) -> str:
     return sino(int(value))
 
 
+# Newspaper hanja abbreviations the TTS model cannot read (left unread, generation runs away).
+HANJA = {'與': '여', '野': '야', '李': '이', '文': '문', '尹': '윤', '朴': '박', '金': '김', '北': '북', '南': '남',
+         '美': '미', '中': '중', '日': '일', '韓': '한', '英': '영', '獨': '독', '佛': '불', '露': '러', '靑': '청',
+         '檢': '검', '軍': '군', '前': '전', '現': '현', '故': '고', '對': '대', '反': '반', '親': '친', '新': '신',
+         '舊': '구', '大': '대', '小': '소', '高': '고', '低': '저', '弗': '불', '株': '주', '黨': '당', '政': '정',
+         '法': '법', '市': '시', '道': '도', '國': '국', '人': '인', '女': '여', '男': '남', '父': '부', '母': '모'}
+
+
 def normalize(text: str, lexicon: dict[str, str] | None = None) -> str:
     value = text
     for key, replacement in sorted({**LEXICON, **(lexicon or {})}.items(), key=lambda x: -len(x[0])):
         value = re.sub(r"(?<![A-Za-z0-9])" + re.escape(key) + r"(?![A-Za-z0-9])", replacement, value)
     # Calendar contexts are distinct from quantities and model identifiers.
+    value = ''.join(HANJA.get(ch, ch) for ch in value)
+    value = re.sub(r'[\u3400-\u4dbf\u4e00-\u9fff]', '', value)  # any remaining ideograph is unreadable: drop it
     value = re.sub(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일",
                    lambda m: f"{sino(int(m[1]))} 년 {('유' if int(m[2]) == 6 else '시' if int(m[2]) == 10 else sino(int(m[2])))}월 {sino(int(m[3]))} 일", value)
     units = {"%p": "퍼센트포인트", "%P": "퍼센트포인트", "퍼센트포인트": "퍼센트포인트",

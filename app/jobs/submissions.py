@@ -150,8 +150,8 @@ class SubmissionQueue:
         """Make a fresh script/video for a finished item and upload it as a new video."""
         with self.lock:
             row = self.get(key)
-            if row["status"] != "completed" or not row["draft_id"]:
-                raise ValueError("완료된 항목만 다시 만들 수 있습니다.")
+            if row["status"] in {"queued", "preparing", "rendering", "uploading"} or not row["draft_id"]:
+                raise ValueError("진행 중인 항목은 다시 만들 수 없습니다.")
             draft = studio_store.get(self.config, row["draft_id"])
             expected = draft["revision"]
             draft.setdefault("previous_outputs", []).append(
@@ -278,7 +278,7 @@ class SubmissionQueue:
             if not draft.get("script"):
                 self._update(key, status="preparing", stage="source_and_script")
                 draft.update(status="researching", automatic=True, approved_revision=None,
-                             content_review=None, error=None)
+                             content_review=None, error=None, seconds=60, narration_speed=1.28)
                 studio_store.save(self.config, draft, draft["revision"])
                 self.manager._prepare(draft)
                 draft = studio_store.get(self.config, draft["id"])
