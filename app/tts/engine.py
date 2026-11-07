@@ -38,7 +38,10 @@ def signature(profile: dict, config: Settings) -> dict:
 
 def make_pcm(raw: Path, target: Path, speed: float = 1) -> dict:
     converted = target.with_suffix(".raw.wav")
-    run(["ffmpeg", "-v", "error", "-y", "-i", str(raw), "-ac", "1", "-ar", "48000",
+    # The model sometimes stalls mid-sentence; internal silences longer than 0.7 s are shortened to
+    # a natural 0.45 s pause before the quality gate (which still rejects anything > 3 s).
+    run(["ffmpeg", "-v", "error", "-y", "-i", str(raw), "-ac", "1", "-ar", "48000", "-af",
+         "silenceremove=stop_periods=-1:stop_duration=0.7:stop_threshold=-38dB:stop_silence=0.45",
          "-c:a", "pcm_s16le", str(converted)])
     quality = inspect_audio(converted)
     filters = (f"atrim=start={quality['trim_start']:.5f}:end={quality['trim_end']:.5f},"

@@ -365,3 +365,23 @@ def test_new_and_rebuilt_submissions_target_one_minute(system):
     config, _manager, _youtube, queue, _renders = system
     first = queue.create("https://example.org/a")
     assert studio_store.get(config, queue.get(first["id"])["draft_id"])["seconds"] == 60
+
+
+def test_long_internal_silences_are_shortened_before_the_quality_gate(tmp_path):
+    import math
+    import struct
+    import wave
+
+    from app.tts.engine import make_pcm
+    raw = tmp_path / "raw.wav"
+    rate = 24000
+    def tone(seconds):
+        return [int(9000 * math.sin(2 * math.pi * 220 * i / rate)) for i in range(int(rate * seconds))]
+    samples = tone(1.5) + [0] * int(rate * 4.0) + tone(1.5)  # 4 s stall in the middle
+    with wave.open(str(raw), "wb") as stream:
+        stream.setnchannels(1)
+        stream.setsampwidth(2)
+        stream.setframerate(rate)
+        stream.writeframes(struct.pack(f"<{len(samples)}h", *samples))
+    result = make_pcm(raw, tmp_path / "out.wav", 1.0)
+    assert result["before"]["longest_internal_silence"] < 1.5 and result["after"]["duration"] < 4.8  # 4 s stall gone
