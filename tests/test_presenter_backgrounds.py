@@ -222,3 +222,24 @@ def test_wardrobe_rotates_outfits_and_caches_each_look(tmp_path, monkeypatch):
     look, image = wardrobe.outfit_for_video(config, approved)
     assert look == "approved-default" and image == approved  # failure keeps the video going
     assert (wardrobe.wardrobe_root(config) / "failures.jsonl").is_file()
+
+
+def test_punch_style_adds_boxed_hook_centered_captions_and_progress_bar(tmp_path):
+    config = Settings(root=tmp_path)
+    scene = {"media_type": "image", "duration": 4, "frames": 120, "hook_scene": True, "visual_first": True,
+             "hook_text": "국회, 특검법안 167-1 찬성", "lines": ["국회, 특검법안 167-1 찬성"], "fitted_lines": [("국회, 특검법안 167-1 찬성", 0)],
+             "font_size": 72, "captions": [{"text": "특검법안이 167 대 1로 통과됐어요.", "start": 0, "end": 4}],
+             "credit": "fixture", "emphasis_words": ["특검법안"], "progress_offset": 10}
+    plan = {"template": "story_explainer", "edit_style": "reels_v3", "text_style": "punch", "subtitle_style": "dynamic",
+            "scenes": [scene], "total_seconds": 40}
+    _fixed, layers = reels.build_layers(scene, plan, tmp_path, 0, config)
+    hook = next(layer for layer in layers if layer.get("stamp"))
+    with Image.open(hook["path"]) as image:
+        assert b"\xff\xe1\x4d\xff" in image.convert("RGBA").tobytes()  # yellow highlight box present
+    assert abs(hook["x"] + hook["size"][0] / 2 - 360) < 2  # centred
+    caption = next(layer for layer in layers if layer["caption"])
+    assert abs(caption["x"] + caption["size"][0] / 2 - 360) < 2
+    bar = next(layer for layer in layers if layer["animation"] == "progress")
+    assert bar["progress_offset"] == 10 and bar["progress_total"] == 40
+    _chain, x, _y, enable = reels.motion_filter(bar, 2, "m", 1)
+    assert enable == "1" and "min(1,(10.0000+t)/40.0000)" in x

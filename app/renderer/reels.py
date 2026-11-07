@@ -25,9 +25,10 @@ from app.renderer.ffmpeg import caption_frame_ranges, encoder_args
 WIDTH, HEIGHT, FPS = 720, 1280, 30
 LEFT, RIGHT = 48, 638
 NAVY, CORAL, PAPER, MUTED = '#101B2D', '#F25B52', '#F5F6F8', '#8B98AA'
+YELLOW = '#FFE14D'  # 'punch' highlight boxes behind key words
 TEMPLATES = {'headline_news', 'story_explainer', 'data_comparison'}
 ANIMATIONS = {'fade', 'slide_up', 'slide_down', 'scale', 'pop', 'words', 'number'}
-VERSION = 'news-reel-v3.5.1-presenter-cutout-captions'
+VERSION = 'news-reel-v3.6.0-punch'
 CONTENT_LABELS = {'adult_satire': '허구 · 성인 공감 풍자', 'myth_check': '속설 검증 · 근거 확인'}
 
 
@@ -60,12 +61,34 @@ def hook_layout(scene, config):
     raise ValueError('후킹 제목이 56px 두 줄 안전영역을 넘습니다. 의미를 보존하여 제목을 직접 줄여 주세요.')
 
 
+def punch_hook_layout(text, config):
+    """Three lines max, as large as fits inside the safe width."""
+    for size in range(84, 55, -2):
+        lines = wrap(text.strip(), load_font(config.font, size, True), 620).splitlines()
+        if len(lines) <= 3:
+            return lines, size
+    raise ValueError('후킹 제목이 세 줄 안전영역을 넘습니다. 제목을 줄여 주세요.')
+
+
+def key_words(text, emphasis):
+    """Words to put on highlight boxes: stated figures and the writer's emphasis words; if
+    neither exists, the longest word so every hook still has one visual anchor."""
+    words = [w for w in emphasis if w and w in text]
+    words += re.findall(r'\d[\d,.]*(?:%|％|억|만|원|호|명|건|배|년|일|개|P|포인트)?', text)
+    if not words:
+        tokens = [t for t in re.split(r'\s+', text) if len(t) >= 2]
+        if tokens:
+            words = [max(tokens, key=len)]
+    return list(dict.fromkeys(words))
+
+
 def caption_layout(text, scene, plan, config):
     v3 = plan.get('edit_style', 'classic') == 'reels_v3'
     style = plan.get('subtitle_style', 'clean')
     visual = scene.get('visual_first') and scene.get('media_type') != 'graphic' and not scene.get('chart')
-    base = (44 if style == 'dynamic' else 40 if style == 'boxed' else 38) if v3 else (42 if visual else 34)
-    limit = 542 if v3 and style == 'dynamic' else 558 if v3 else 560
+    punch = plan.get('text_style') == 'punch'
+    base = (50 if punch else 44 if style == 'dynamic' else 40 if style == 'boxed' else 38) if v3 else (42 if visual else 34)
+    limit = 600 if punch else 542 if v3 and style == 'dynamic' else 558 if v3 else 560
     sizes = range(base, 37, -2) if base >= 38 else [base]
     for size in sizes:
         lines = wrap(text, load_font(config.font, size, True), limit).splitlines()
@@ -182,26 +205,42 @@ def validate_plan(plan: dict, config: Settings) -> list[dict]:
                            'estimated_captions': estimated, 'fitted_lines': fitted, 'font_size': size})
     if not 2 <= sum(scene['frames'] for scene in normalized) / 30 <= 120:
         raise ValueError('영상 전체 길이는 2~120초여야 합니다.')
+    cursor = 0.0
+    for scene in normalized:
+        scene['progress_offset'] = cursor  # for the top progress bar
+        cursor += scene['frames'] / 30
+    plan['total_seconds'] = cursor
     return normalized
 
 
-def text_layer(text, font, color, path, background=None, highlights=(), only_highlights=False):
+def text_layer(text, font, color, path, background=None, highlights=(), only_highlights=False,
+               box=False, stroke=1, center=False):
+    """Render text to a PNG layer. box=True draws key words on a yellow box (navy ink) with a
+    heavy outline and shadow, the look of current short-form news captions."""
     lines = text.splitlines()
     step = round(font.size * 1.4)
-    image = Image.new('RGBA', (math.ceil(max(font.getlength(line) for line in lines)) + 32,
-                               step * len(lines) + 22))
+    pad = 16 if not box else 22
+    image = Image.new('RGBA', (math.ceil(max(font.getlength(line) for line in lines)) + pad * 2,
+                               step * len(lines) + 22 + (10 if box else 0)))
     draw = ImageDraw.Draw(image)
     if background:
         draw.rounded_rectangle((0, 0, image.width - 1, image.height - 1), radius=12, fill=background)
     for row, line in enumerate(lines):
-        x = 16
+        x = pad if not center else (image.width - font.getlength(line)) / 2
+        y = 4 + row * step + (5 if box else 0)
         for token in re.split(r'(\s+)', line):
             marked = any(word and word in token for word in highlights)
-            ink = CORAL if marked else color
-            if not only_highlights or marked:
-                draw.text((x, 4 + row * step), token, font=font, fill=ink,
-                          stroke_width=1, stroke_fill=(0, 0, 0, 130))
-            x += font.getlength(token)
+            width = font.getlength(token)
+            if box and marked and token.strip():
+                draw.rounded_rectangle((x - 6, y - 2, x + width + 6, y + font.size + 10), radius=10, fill=YELLOW)
+                draw.text((x, y), token, font=font, fill=NAVY)
+            elif not only_highlights or marked:
+                ink = CORAL if marked and not box else color
+                if stroke >= 3:
+                    draw.text((x + 3, y + 4), token, font=font, fill=(0, 0, 0, 110))  # soft drop shadow
+                draw.text((x, y), token, font=font, fill=ink,
+                          stroke_width=stroke, stroke_fill=(0, 0, 0, 130 if stroke == 1 else 235))
+            x += width
     image.save(path)
     return image.size
 
@@ -255,11 +294,18 @@ def build_layers(scene, plan, folder, index, config):
     has_presenter = bool(scene.get('presenter_windows'))
     context_chart = v3 and scene['media_type'] != 'graphic' and bool(scene.get('chart'))
     visual_first = (bool(scene.get('visual_first')) or v3) and scene['media_type'] != 'graphic' and not scene.get('chart')
+    punch = v3 and plan.get('text_style') == 'punch'
     fixed = Image.new('RGBA', (width, height))
     draw = ImageDraw.Draw(fixed)
     chart_layers = []
     for y in range(height):
-        alpha = int(12 + 180 * max(0, min(1, (y / scale - 470) / 700))) if visual_first else int(25 + 165 * max(0, min(1, (y / scale - 130) / 950)))
+        if punch and visual_first:
+            # Darker top band for the headline and bottom band for captions; photo stays bright in between.
+            top = 70 * max(0, 1 - (y / scale) / 380)
+            bottom = 190 * max(0, min(1, (y / scale - 560) / 520))
+            alpha = int(16 + top + bottom)
+        else:
+            alpha = int(12 + 180 * max(0, min(1, (y / scale - 470) / 700))) if visual_first else int(25 + 165 * max(0, min(1, (y / scale - 130) / 950)))
         draw.line((0, y, width, y), fill=(16, 27, 45, alpha))
     hero_y, hero_step, hero_size = (610, 82, min(56, scene['font_size'])) if visual_first else (300, 106, scene['font_size'])
     if template == 'story_explainer' and not visual_first and not hook and not context_chart:
@@ -299,8 +345,11 @@ def build_layers(scene, plan, folder, index, config):
         # Headline sits on the photo next to the cut-out presenter; a soft plate keeps it readable.
         draw.rounded_rectangle((32 * scale, 166 * scale, 654 * scale, 318 * scale),
                                radius=18 * scale, fill=(16, 27, 45, 150))
+    punch_hook = punch and hook and not has_presenter
     if hook and has_presenter:
         hero_y, hero_step, hero_size = 182, 62, min(48, scene['font_size'])
+    elif punch_hook:
+        hero_y, hero_step, hero_size = 400, 100, scene['font_size']  # replaced by the centred block below
     elif hook:
         hero_y, hero_step, hero_size = 228, 100, scene['font_size']
         plate = Image.new('RGBA', (int(622 * scale), int(274 * scale)))
@@ -358,6 +407,22 @@ def build_layers(scene, plan, folder, index, config):
             or any(not isinstance(word, str) or not word.strip() for word in emphasis_words)):
         raise ValueError('emphasis_words는 강조할 단어의 목록이어야 합니다.')
     hero_lines = [] if v3 and visual_first and not hook else scene['fitted_lines']
+    if punch_hook:
+        # One centred block, up to three lines, key words on yellow boxes, stamp-in with a shake.
+        text = scene.get('hook_headline_text') or scene.get('hook_text') or ' '.join(scene['lines'])
+        lines, size = punch_hook_layout(text, config)
+        font = load_font(config.font, int(size * scale), True)
+        path = folder / f'hero-{index:02}-punch.png'
+        box_size = text_layer('\n'.join(lines), font, PAPER, path, box=True, stroke=3, center=True,
+                              highlights=key_words(text, scene.get('emphasis_words') or []))
+        block_y = max(170, 560 - box_size[1] / scale / 2)
+        layers.append({'path': path, 'x': (width - box_size[0]) / 2, 'y': block_y * scale,
+                       'start': .05, 'end': min(2.4, scene['frames'] / 30), 'animation': 'pop',
+                       'size': box_size, 'caption': False, 'stamp': True})
+        hero_lines = []
+    elif punch and not visual_first and hero_lines:
+        # Non-photo scenes: heavy outlined headline with a coral bar instead of flat text.
+        draw.rectangle((32 * scale, (hero_y + 6) * scale, 40 * scale, (hero_y + hero_step * len(hero_lines) - 20) * scale), fill=CORAL)
     for row, (line, original) in enumerate(hero_lines):
         # Keep the first readable state neutral, then crossfade only the
         # emphasized glyphs. Light comparison panels start with navy type.
@@ -390,14 +455,26 @@ def build_layers(scene, plan, folder, index, config):
         style = plan.get('subtitle_style', 'clean')
         dynamic = v3 and style == 'dynamic'
         highlights = cue.get('highlight', []) + (re.findall(r'\d[\d,.]*(?:%|억|만|원|건|명|초)?', cue['text']) if dynamic else [])
-        plate = (16, 27, 45, 225) if dynamic else NAVY if style == 'boxed' else None
-        size = text_layer(text, font, PAPER, path, background=plate, highlights=highlights)
-        caption_x = 56 if dynamic else 48 if v3 else 32
-        caption_y = 866 if dynamic else 892 if v3 else 922
+        if punch:
+            highlights = key_words(cue['text'], scene.get('emphasis_words') or [])
+            size = text_layer(text, font, PAPER, path, highlights=highlights, box=True, stroke=3, center=True)
+            caption_x, caption_y = (width - size[0]) / 2 / scale, 880 - (size[1] / scale - 90) / 2
+        else:
+            plate = (16, 27, 45, 225) if dynamic else NAVY if style == 'boxed' else None
+            size = text_layer(text, font, PAPER, path, background=plate, highlights=highlights)
+            caption_x = 56 if dynamic else 48 if v3 else 32
+            caption_y = 866 if dynamic else 892 if v3 else 922
         layers.append({'path': path, 'x': caption_x * scale, 'y': caption_y * scale, 'start': start / 30,
                        'end': end / 30, 'animation': 'fade', 'size': size, 'caption': True,
                        'dynamic_caption': dynamic,
                        'start_frame': start, 'end_frame': end})
+    if punch:
+        bar = Image.new('RGBA', (width, max(4, int(6 * scale))), CORAL)
+        bar_path = folder / f'progress-{index:02}.png'
+        bar.save(bar_path)
+        layers.append({'path': bar_path, 'x': 0, 'y': 0, 'start': 0, 'end': scene['frames'] / 30,
+                       'animation': 'progress', 'size': bar.size, 'caption': False,
+                       'progress_offset': scene.get('progress_offset', 0), 'progress_total': plan.get('total_seconds') or scene['frames'] / 30})
     return fixed_path, layers
 
 
@@ -415,8 +492,15 @@ def motion_filter(layer, input_index, label, scale):
             chain += f",scale=w='max(2,trunc(iw*({factor})/2)*2)':h=-2:eval=frame"
             x += f'+({width}-overlay_w)/2'
             y += f'+({height}-overlay_h)/2'
+    elif animation == 'progress':
+        # A thin bar that fills the top edge over the whole video (offset by this scene's start).
+        enable = '1'
+        total = max(.1, layer['progress_total'])
+        x = f"-{width}+{width}*min(1,({layer['progress_offset']:.4f}+t)/{total:.4f})"
     else:
         enable = f'gte(t,{start:.6f})*lt(t,{end:.6f})'
+        if layer.get('stamp'):
+            x += f'+{4 * scale:.2f}*sin(45*(t-{start:.6f}))*(1-min(1,(t-{start:.6f})/0.35))'
         if animation == 'chart_reveal':
             # Scale-X reveals the immutable, sourced panel; no synthetic numeric
             # interpolation. At 0.7s the exact original width is held to the end.
@@ -489,6 +573,11 @@ def segment(scene, plan, folder, index, config, previous_tail=None):
     if scene['media_type'] == 'video':
         base = (f'[0:v]fps=30,scale={width}:{height}:force_original_aspect_ratio=increase,'
                 f'crop={width}:{height},setsar=1,setpts=PTS-STARTPTS,trim=duration={seconds:.8f}')
+    elif plan.get('edit_style', 'classic') == 'reels_v3' and plan.get('text_style') == 'punch' and scene['media_type'] == 'image':
+        # Slow push-in computed at 2x and scaled down: half-pixel steps, no visible jitter.
+        zoom = f'1+0.07*on/{max(1, count - 1)}' if index % 2 == 0 else f'1.07-0.07*on/{max(1, count - 1)}'
+        base = (f"[0:v]scale={width * 2}:{height * 2}:flags=lanczos,zoompan=z='{zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f'd={count}:s={width * 2}x{height * 2}:fps=30,scale={width}:{height}:flags=lanczos,setsar=1')
     elif plan.get('edit_style', 'classic') == 'reels_v3':
         # Still backgrounds stay pixel-stable. Output-sized moving crops step
         # across integer pixels, making buildings and graphic lines jitter.

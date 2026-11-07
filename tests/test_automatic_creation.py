@@ -536,7 +536,7 @@ def test_source_without_long_sentences_still_yields_evidence(monkeypatch):
 
 def test_list_pages_and_broken_encoding_are_technical_failures_not_videos(monkeypatch):
     from app.news import sources
-    short_links = '<html><body><main>' + ''.join(f'<p>속보 제목 {n}</p>' for n in range(40)) + '</main></body></html>'
+    short_links = '<html><body><main>' + ''.join(f'<p><a href="/a/{n}">속보 제목 {n}번 기사입니다</a></p>' for n in range(40)) + '</main></body></html>'
     monkeypatch.setattr(sources, 'fetch_public', lambda url, **k: (url, short_links.encode(), 'text/html; charset=utf-8'))
     with pytest.raises(ValueError, match='목록'):
         sources.source_page('https://news.example.org/list')
@@ -629,3 +629,13 @@ def test_trending_stories_use_neutral_korean_scenes_and_loose_library_tags_do_no
     script = Script(title='꿈 해몽', description='꿈 해몽 자료 검증입니다.', scenes=[scene] * 4)
     report = discovery.ensure_media(config, script, 'trending')
     assert script.scenes[0].asset_id is None or '보관 사진' in ' '.join(report['errors'])  # never a loose one-tag library match
+
+
+def test_blog_fragments_are_stitched_into_sentences_and_short_line_blogs_are_not_list_pages(monkeypatch):
+    from app.news import sources
+    pieces = ['돼지 꿈은 복권에 당첨되는', '길몽일까요?', '아뇨! 예부터 재물과 복을', '상징해 왔지만 풀이가 달라져요.', '태몽으로 이어지는 경우도 많답니다.']
+    assert sources.merge_fragments(pieces) == ['돼지 꿈은 복권에 당첨되는 길몽일까요?', '아뇨! 예부터 재물과 복을 상징해 왔지만 풀이가 달라져요.', '태몽으로 이어지는 경우도 많답니다.']
+    html = '<html><body><div class="se-main-container">' + ''.join(f'<p>{x}</p>' for x in pieces) + ''.join(f'<p>{n}번째 추가 문단은 짧게</p><p>끊겨 있어도 이어 붙여요.</p>' for n in range(6)) + '</div></body></html>'
+    monkeypatch.setattr(sources, 'fetch_public', lambda url, **k: (url, html.encode(), 'text/html; charset=utf-8'))
+    page = sources.source_page('https://m.blog.naver.com/someone/1')
+    assert page['lines'][0] == '돼지 꿈은 복권에 당첨되는 길몽일까요?'

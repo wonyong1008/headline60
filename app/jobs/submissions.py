@@ -97,7 +97,7 @@ class SubmissionQueue:
                    "voice": self.config.voice, "voice_profile_id": "reels-natural-sohee" if any(
                        p["voice_profile_id"] == "reels-natural-sohee" and p["available"] for p in available
                    ) else "macos-yuna-news", "metrics": {}, "automatic": True,
-                   "submission_id": row["id"], "anchor_id": row["anchor_id"]}
+                   "submission_id": row["id"], "anchor_id": row["anchor_id"], "text_style": "punch"}
         if articles:
             payload["topic"] = articles[0]["title"][:200]
         else:
@@ -157,7 +157,7 @@ class SubmissionQueue:
             draft.setdefault("previous_outputs", []).append(
                 {"job_id": row["job_id"], "youtube_url": row["youtube_url"], "rebuilt_at": datetime.now(UTC).isoformat()})
             # A new revision keeps the old job (and its YouTube upload record) untouched.
-            draft.update(script=None, latest_job_id=None, status="failed", error=None, seconds=60, narration_speed=1.28,
+            draft.update(script=None, latest_job_id=None, status="failed", error=None, seconds=60, narration_speed=1.28, text_style="punch",
                          approved_revision=None, content_review=None, content_warnings=[],
                          evidence=[e for e in draft.get("evidence", []) if e.get("reviewed")])  # re-extract on rebuild
             draft["revision"] += 1
@@ -279,7 +279,7 @@ class SubmissionQueue:
             if not draft.get("script"):
                 self._update(key, status="preparing", stage="source_and_script")
                 draft.update(status="researching", automatic=True, approved_revision=None,
-                             content_review=None, error=None, seconds=60, narration_speed=1.28)
+                             content_review=None, error=None, seconds=60, narration_speed=1.28, text_style="punch")
                 studio_store.save(self.config, draft, draft["revision"])
                 self.manager._prepare(draft)
                 draft = studio_store.get(self.config, draft["id"])

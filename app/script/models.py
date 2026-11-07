@@ -83,6 +83,7 @@ class VideoRequest(BaseModel):
     template: Literal["legacy", "headline_news", "story_explainer", "data_comparison"] = "legacy"
     content_mode: Literal["news", "myth_check", "adult_satire"] = "news"
     edit_style: Literal["classic", "reels_v3"] = "classic"
+    text_style: Literal["classic", "punch"] = "classic"
     narration_speed: float = Field(default=1.0, ge=1, le=1.35)
     subtitle_style: Literal["clean", "boxed", "dynamic"] = "clean"
     music_asset_id: str | None = Field(default=None, max_length=60)

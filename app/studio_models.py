@@ -39,6 +39,7 @@ class Evidence(StrictModel):
 class ReelOptions(StrictModel):
     template: TemplateName = "headline_news"
     edit_style: Literal["classic", "reels_v3"] = "reels_v3"
+    text_style: Literal["classic", "punch"] = "punch"  # current short-form look: boxes, big captions
     narration_speed: float = Field(default=1.28, ge=1, le=1.35)  # user choice 2026-11-07
     subtitle_style: Literal["clean", "boxed", "dynamic"] = "clean"
     music_asset_id: str | None = Field(default=None, max_length=60)
@@ -75,6 +76,7 @@ class DraftEdit(ReelOptions):
     topic: str = Field(default="", max_length=200)
     fiction_acknowledged: bool = False
     edit_style: Literal["classic", "reels_v3"] = "classic"
+    text_style: Literal["classic", "punch"] = "classic"
     narration_speed: float = Field(default=1.0, ge=1, le=1.35)
     template: Literal["legacy", "headline_news", "story_explainer", "data_comparison"] = "legacy"
     revision: int = Field(ge=1)

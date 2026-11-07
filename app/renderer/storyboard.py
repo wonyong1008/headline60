@@ -208,6 +208,7 @@ def build_plan(script: Script, folder: Path, request, config: Settings, news: di
     plan = {"width": request.resolution, "fps": 30, "template": request.template,
             "category": "성인 공감 코미디" if request.content_mode == "adult_satire" else "속설 검증" if request.content_mode == "myth_check" else request.category, "title": script.title, "subtitle_style": request.subtitle_style,
             "edit_style": request.edit_style, "narration_speed": request.narration_speed,
+            "text_style": getattr(request, "text_style", "classic"),
             "content_mode": request.content_mode,
             "audio_path": str(narration), "music_path": music["local_path"] if music else None,
             "scenes": scenes}

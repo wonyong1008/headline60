@@ -151,6 +151,23 @@ def decode_html(data: bytes, content_type: str = '') -> str:
     return data.decode('utf-8', errors='replace')
 
 
+def merge_fragments(lines: list[str]) -> list[str]:
+    """Join consecutive short fragments until a sentence ends (Naver SmartEditor splits lines
+    every ~25 characters). Lines that already end a sentence are kept as they are."""
+    merged, buffer = [], ''
+    for line in lines:
+        piece = line.strip()
+        if not piece:
+            continue
+        buffer = f'{buffer} {piece}'.strip() if buffer else piece
+        if re.search(r'[.!?…~]["\')\]]?$|[다요죠됨임음]$', buffer) or len(buffer) >= 300:
+            merged.append(buffer)
+            buffer = ''
+    if buffer:
+        merged.append(buffer)
+    return merged
+
+
 def source_page(url: str) -> dict:
     original = public_url(url)
     parts = urlsplit(original)
@@ -180,8 +197,12 @@ def source_page(url: str) -> dict:
     lines = list(dict.fromkeys(container or parser.paragraphs or parser.body_lines or parser.all_lines))
     if sum(len(line) for line in lines) < 100:
         raise ValueError('요약할 공개 본문을 찾지 못했습니다. 비공개·삭제·접근 제한 여부를 확인하세요.')
-    if not any(len(line) >= 40 for line in lines):
-        # Headline lists / index pages: many short links, no article sentence to narrate.
+    # Blog editors break one sentence over several short paragraphs; stitch them back together.
+    lines = merge_fragments(lines)
+    link_text = sum(len(' '.join(label.split())) for _href, label in parser.links)
+    body_text = sum(len(line) for line in lines)
+    if link_text > body_text * .6:
+        # Headline lists / index pages: almost everything on the page is a link label.
         raise ValueError('기사 본문이 아니라 목록·메뉴 페이지로 보입니다. 기사 한 건의 주소를 등록하세요.')
     title = parser.meta.get('og:title') or parser.title
     published, precision = publication_date(parser)
