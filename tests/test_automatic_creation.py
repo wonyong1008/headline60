@@ -386,15 +386,25 @@ def test_casual_speech_level_is_not_a_rejection_reason(monkeypatch):
     assert script.scenes[1].narration.endswith('먼저야.')
 
 
-def test_unparseable_model_output_still_fails_instead_of_rendering(monkeypatch):
+def test_unparseable_model_output_falls_back_to_source_sentences(monkeypatch):
     from app.llm import automatic_writer
-    from app.llm.ollama import LLMError
     source = automatic.excerpts(page(), '주택 공급')[0]
     original = httpx.Client
     monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(
         lambda request: httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': '{"title": "x"'}))))
-    with pytest.raises(LLMError):
-        automatic_writer.generate_automatic({'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택'}, Settings())
+    script, raw = automatic_writer.generate_automatic({'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급 계획 발표'}, Settings())
+    assert raw['fallback'] and len(script.scenes) == 4 and sum(s.duration_seconds for s in script.scenes) == 30
+    assert script.scenes[1].narration in source['excerpt']
+
+
+def test_imperfect_model_output_is_coerced_instead_of_rejected():
+    from app.llm.automatic_writer import coerce_story
+    payload = json.dumps({'title': '제목' * 30, 'scenes': [
+        {'headline': '아주 긴 헤드라인이 스물네 자를 훌쩍 넘어가는 경우입니다', 'narration': '본문 문장' * 40, 'source': 0, 'visual_query': '', 'visual_en': ''},
+        {'headline': '', 'narration': '짧은 문장이지만 여덟 자는 넘어요.', 'source': 1}]})
+    story = coerce_story(payload, 2)
+    assert len(story.scenes) == 2 and len(story.title) <= 30
+    assert all(len(s.headline) <= 24 and len(s.narration) <= 100 and s.visual_en for s in story.scenes)
 
 
 def test_article_body_with_br_paragraphs_and_unclosed_noscript_is_read():
@@ -464,3 +474,55 @@ def test_one_minute_drafts_take_up_to_eight_excerpts_from_the_article(monkeypatc
     short, _ = automatic.gather({'source_url': article['url'], 'category': 'trending', 'topic': '주택 공급', 'articles': [], 'evidence': [], 'seconds': 30}, article)
     long, _ = automatic.gather({'source_url': article['url'], 'category': 'trending', 'topic': '주택 공급', 'articles': [], 'evidence': [], 'seconds': 60}, article)
     assert len(short) == 4 and len(long) == 8
+
+
+def test_listicle_becomes_one_evidence_item_per_numbered_section(monkeypatch):
+    monkeypatch.setattr(automatic, 'discover', lambda query: [])
+    lines = ['부산에서 가볼 만한 곳 8가지를 정리했습니다.']
+    for n, name in enumerate(['해운대', '광안리', '감천문화마을', '태종대', '자갈치시장', '송정', '흰여울', '다대포'], start=1):
+        lines += [f'{n}. {name}', f'{name}은 사진 찍기 좋은 곳으로, 주말에는 사람이 많아 아침 일찍 가는 편이 좋습니다.']
+    post = {**page(), 'url': 'https://blog.example.org/busan', 'title': '부산 가볼 만한 곳 8가지', 'lines': lines}
+    items = automatic.list_items(post)
+    assert [i['scope'] for i in items] == ['list_item'] * 8 and items[2]['fact'].startswith('3. 감천문화마을 — 감천문화마을은')
+    found, report = automatic.gather({'source_url': post['url'], 'category': 'trending', 'topic': post['title'],
+                                      'articles': [], 'evidence': [], 'seconds': 60}, post)
+    assert [e['scope'] for e in found][:8] == ['list_item'] * 8 and report['status'] == 'ready'
+    assert automatic.list_items({**post, 'lines': lines[:5]}) == []  # fewer than four items: not a listicle
+
+
+def test_list_mode_makes_one_scene_per_item_after_the_hook(monkeypatch):
+    from app.llm import automatic_writer
+    lines = ['서울 산책 코스 5가지입니다.']
+    for n, name in enumerate(['남산', '한강', '청계천', '북촌', '서울숲'], start=1):
+        lines += [f'{n}. {name}', f'{name}은 천천히 걷기 좋은 곳이고, 저녁 무렵 풍경이 특히 좋습니다.']
+    post = {**page(), 'url': 'https://blog.example.org/seoul', 'title': '서울 산책 코스 5가지', 'lines': lines}
+    evidence = automatic.list_items(post)
+    story = {'title': '서울 산책 코스 5가지', 'scenes': [
+        {'headline': '서울 산책 코스 5곳', 'narration': '서울에서 걷기 좋은 산책 코스 다섯 곳을 골랐어요.', 'source': 0, 'visual_query': '서울 거리', 'visual_en': 'seoul street'}] + [
+        {'headline': f'{n}. {name}', 'narration': f'{name}은 천천히 걷기 좋은 곳이고, 저녁 무렵 풍경이 특히 좋아요.', 'source': n - 1,
+         'visual_query': name, 'visual_en': 'seoul park'} for n, name in enumerate(['남산', '한강', '청계천', '북촌', '서울숲'], start=1)]}
+    original, counts = httpx.Client, []
+    def respond(request):
+        body = json.loads(request.content)
+        if 'checks' in body['format']['properties']:
+            return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': all_faithful(6)})
+        counts.append(body['format']['properties']['scenes']['maxItems'])
+        return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': json.dumps(story)})
+    monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
+    script, _ = automatic_writer.generate_automatic({'category': 'trending', 'seconds': 60, 'evidence': evidence, 'topic': post['title']}, Settings())
+    assert counts[0] == 6 and len(script.scenes) == 6 and abs(sum(s.duration_seconds for s in script.scenes) - 60) < .05
+    assert script.scenes[1].headline == '1. 남산' and script.scenes[5].claim_ids == [evidence[4]['id']]
+
+
+def test_naver_cafe_urls_are_refused_with_a_clear_message_and_korean_charsets_decode():
+    from app.news.sources import decode_html, source_page
+    with pytest.raises(ValueError, match='네이버 카페'):
+        source_page('https://cafe.naver.com/ungsangjang/881902')
+    assert decode_html('본문 한글'.encode('cp949'), 'text/html;charset=MS949') == '본문 한글'
+
+
+def test_source_without_long_sentences_still_yields_evidence(monkeypatch):
+    monkeypatch.setattr(automatic, 'discover', lambda query: [])
+    post = {**page(), 'url': 'https://blog.example.org/short', 'lines': ['짧은 메모 하나.', '또 다른 짧은 메모입니다.', '세 번째 줄도 짧아요.']}
+    found, report = automatic.gather({'source_url': post['url'], 'category': 'trending', 'topic': '메모', 'articles': [], 'evidence': [], 'seconds': 30}, post)
+    assert found and report['status'] == 'ready'

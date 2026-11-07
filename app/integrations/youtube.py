@@ -82,12 +82,16 @@ def video_metadata(folder: Path, privacy: str = 'private') -> dict:
     description = narration + ('\n\n출처\n' + sources if sources else '')
     if credits:
         description += '\n\n' + credits.removeprefix('# 자료 출처\n').strip()
-    description += '\n\nHEADLINE 60 · AI를 활용한 내레이션·편집 콘텐츠입니다.\n#Shorts #헤드라인60'
+    description += '\n\nHEADLINE 60 · 자동 편집 콘텐츠입니다.\n#Shorts #헤드라인60'
     if len(description) > 5000:
         raise ValueError('전체 대본과 필수 출처가 설명 5,000자 제한을 넘습니다. 대본·출처 표시를 정리하세요.')
+    # YouTube requires the altered/synthetic disclosure for realistic synthetic people: the AI
+    # presenter. Photo + caption + narration videos contain no realistic synthetic scene.
+    anchor = read_json(folder / 'anchor-status.json')
+    synthetic = anchor.get('status') == 'completed'
     return {'snippet': {'title': title, 'description': description, 'categoryId': '25',
                         'defaultLanguage': 'ko', 'tags': [str(t).lstrip('#') for t in script.get('hashtags', [])][:12]},
-            'status': {'privacyStatus': privacy, 'selfDeclaredMadeForKids': False, 'containsSyntheticMedia': True}}
+            'status': {'privacyStatus': privacy, 'selfDeclaredMadeForKids': False, 'containsSyntheticMedia': synthetic}}
 
 
 class YoutubeService:

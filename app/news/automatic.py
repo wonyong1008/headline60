@@ -69,7 +69,8 @@ def excerpts(page: dict, query: str, *, official_only: bool = True, fallback: bo
             ranked.append((score, index, line))
     if not ranked and fallback:
         # The user's own URL is always usable: with no keyword match, use its lead paragraphs.
-        ranked = eligible
+        ranked = eligible or [(0, index, line) for index, line in enumerate(page['lines'])
+                              if 10 <= len(line) <= 600 and not re.match(r'^\[\d+\]', line)]
     # Ties prefer earlier paragraphs (news is written lead-first).
     selected = sorted(sorted(ranked, key=lambda item: (-item[0], item[1]))[:limit], key=lambda item: item[1])
     result = []
@@ -100,6 +101,37 @@ def excerpts(page: dict, query: str, *, official_only: bool = True, fallback: bo
             'verification': 'source_matched', 'source_sha256': page['sha256'], 'date_precision': page['date_precision']})
     # The headline is added only alongside body excerpts, never as the sole evidence.
     return [*result, title_item] if result and title_item else result
+
+
+LIST_HEADING = re.compile(r'^\s*(?:(\d{1,2})[.)]|(\d{1,2})\s*번째|#?(\d{1,2})\s*[:：]|(?:TOP|Top|top)\s*(\d{1,2}))\s*(.{2,60})$')
+
+
+def list_items(page: dict) -> list[dict]:
+    """Numbered sections (1. 이름 … 2. 이름 …) of a listicle, each with its own text."""
+    items = []
+    for line in page['lines']:
+        match = LIST_HEADING.match(line)
+        if match:
+            number = int(next(g for g in match.groups()[:4] if g))
+            if number == len(items) + 1 and number <= 12:
+                items.append({'number': number, 'heading': match.group(5).strip(' -–—:·'), 'text': []})
+                continue
+        if items and len(line) <= 600:
+            items[-1]['text'].append(line)
+    if len(items) < 4 or not page['published_date']:
+        return []
+    result = []
+    for item in items:
+        body = ' '.join(item['text']).strip()
+        quote = (f"{item['number']}. {item['heading']} — {body}" if body else f"{item['number']}. {item['heading']}")[:600]
+        result.append({'id': hashlib.sha256((page['url'] + '#item' + quote).encode()).hexdigest()[:12],
+            'url': page['url'], 'publisher': page['publisher'][:100], 'title': page['title'],
+            'published_date': page['published_date'], 'accessed_date': date.today().isoformat(),
+            'fact': quote[:300], 'excerpt': quote, 'scope': 'list_item',
+            'conditions': f"원문 목록의 {item['number']}번째 항목. 자동 발췌이며 최종 대본 검토 필요.",
+            'reviewed': False, 'permission': 'official' if official_url(page['url']) else 'allowed',
+            'verification': 'source_matched', 'source_sha256': page['sha256'], 'date_precision': page['date_precision']})
+    return result
 
 
 def source_outline(page: dict) -> list[dict]:
@@ -166,8 +198,12 @@ def gather(draft: dict, source: dict | None = None) -> tuple[list[dict], dict]:
                 known_urls.add(page['url'])
         except (httpx.HTTPError, OSError, ValueError, NewsError) as exc:
             errors.append(f'{url}: {str(exc)[:180]}')
+    listed = list_items(source) if source is not None and draft.get('seconds') == 60 else []
+    if listed:
+        # A listicle (가볼 만한 곳 8가지 …) becomes one scene per item, in order.
+        pages = [page for page in pages if page is not source]
     # A one-minute video needs about twice the material of a 30-second one.
-    found = [item for page in pages for item in (
+    found = listed + [item for page in pages for item in (
         excerpts(page, query, official_only=False, fallback=True, limit=8 if draft.get('seconds') == 60 else 4) if page is source
         else excerpts(page, query, official_only=medical or source is None))]
     if source is not None and medical and not official_url(source['url']):

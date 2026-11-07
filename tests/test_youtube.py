@@ -53,7 +53,11 @@ def test_description_keeps_full_narration_and_attribution_private(video):
     assert '첫 장면의 전체 대본입니다.' in description and '두 번째 장면도 생략 없이 담습니다.' in description
     assert 'Original Author' in description and 'https://www.korea.kr/news/example' in description
     assert data['status']['privacyStatus'] == 'private'
-    assert data['status']['containsSyntheticMedia'] is True
+    assert data['status']['containsSyntheticMedia'] is False  # no presenter: no synthetic-scene disclosure
+    (video / 'anchor-status.json').write_text(json.dumps({'status': 'completed'}))
+    assert youtube.video_metadata(video)['status']['containsSyntheticMedia'] is True  # AI presenter: required
+    (video / 'anchor-status.json').write_text(json.dumps({'status': 'fallback'}))
+    assert youtube.video_metadata(video)['status']['containsSyntheticMedia'] is False
 
 
 @pytest.mark.parametrize('url', ['http://www.googleapis.com/upload', 'https://evil.example/upload',

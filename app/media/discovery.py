@@ -155,6 +155,15 @@ def ensure_media(config: Settings, script, category: str) -> dict:
                 used.add(asset['asset_id'])
                 scene.asset_id = asset['asset_id']
                 break
+        if not scene.asset_id:
+            # Last resort: any approved photo in the library, so no scene falls back to a plain graphic.
+            pool = [a for a in listing(config) if a['usage_status'] == 'approved' and a['media_type'] == 'image'
+                    and not NOT_PHOTO.search(a.get('name', '')) and a['asset_id'] not in used]
+            pool.sort(key=lambda a: (a['category'] != category, a.get('created_at', '')))
+            if pool:
+                used.add(pool[0]['asset_id'])
+                scene.asset_id = pool[0]['asset_id']
+                errors.append(f'장면 {index + 1}: 관련 사진이 없어 보관 사진을 사용했습니다.')
     result = {'imported': imported, 'queries': sorted(searched), 'errors': errors,
               'seconds': round(time.perf_counter() - started, 3),
               'notice': '라이선스와 저작자 메타데이터가 확인된 자료만 가져옵니다. 실패 시 기존 관련 자료 또는 브랜드 그래픽을 사용합니다.'}

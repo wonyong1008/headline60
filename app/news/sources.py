@@ -111,6 +111,21 @@ class SourceHTML(HTMLParser):
             self.current_link[1] += value + ' '
 
 
+def decode_html(data: bytes, content_type: str = '') -> str:
+    """Korean sites still serve EUC-KR/MS949; honour the declared charset, then fall back to UTF-8."""
+    declared = re.search(r'charset=["\']?([\w-]+)', content_type or '', re.IGNORECASE)
+    if not declared:
+        declared = re.search(rb'charset=["\']?([\w-]+)', data[:4000], re.IGNORECASE)
+    name = (declared.group(1) if declared else b'utf-8')
+    name = name.decode('ascii', 'ignore') if isinstance(name, bytes) else name
+    for encoding in (name, 'utf-8', 'cp949'):
+        try:
+            return data.decode({'euc-kr': 'cp949', 'ms949': 'cp949', 'ks_c_5601-1987': 'cp949'}.get(encoding.lower(), encoding))
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return data.decode('utf-8', errors='replace')
+
+
 def source_page(url: str) -> dict:
     original = public_url(url)
     parts = urlsplit(original)
@@ -119,10 +134,12 @@ def source_page(url: str) -> dict:
         match = re.fullmatch(r'/([A-Za-z0-9_-]+)/(\d+)/?', parts.path)
         if match:
             url = f'https://m.blog.naver.com/{match[1]}/{match[2]}'
+    if parts.hostname in {'cafe.naver.com', 'm.cafe.naver.com'}:
+        raise ValueError('네이버 카페 글은 본문이 공개 HTML로 제공되지 않아 읽을 수 없습니다. 네이버 블로그·뉴스·일반 사이트 주소를 등록하세요.')
     final, data, content_type = fetch_public(url)
     if 'text/html' not in content_type:
         raise ValueError('현재 공개 HTML 글만 지원합니다. 로그인·PDF·영상 전용 주소는 불러오지 않습니다.')
-    html = data.decode('utf-8', errors='replace')
+    html = decode_html(data, content_type)
     parser = SourceHTML()
     parser.feed(html)
     # Prefer whichever reading of the article container holds more text (<p> blocks or <br> runs).

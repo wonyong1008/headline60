@@ -1,3 +1,5 @@
+from pathlib import Path
+
 """Optional presenters must follow current speech and preserve the footage fallback."""
 import json
 from copy import deepcopy
@@ -70,6 +72,7 @@ def test_real_job_audio_controls_cache_and_windows(approved, tmp_path, monkeypat
         calls.append((audio.read_bytes(), intervals))
         output = folder / "presenter.mp4"
         output.write_bytes(b"fresh mouth frames")
+        output.with_name("presenter-matte.mp4").write_bytes(b"fresh matte frames")
         return output, {"status": "completed", "source_audio": str(audio)}
 
     monkeypatch.setattr(production, "_synthesize", synthesize)
@@ -83,6 +86,7 @@ def test_real_job_audio_controls_cache_and_windows(approved, tmp_path, monkeypat
     for scene, before in zip(selected["scenes"], original["scenes"], strict=True):
         assert {k: v for k, v in scene.items() if k != "presenter_windows"} == before
     intro = selected["scenes"][0]["presenter_windows"][0]
+    assert Path(intro["matte"]).read_bytes() == b"fresh matte frames"  # cut-out matte travels with the clip
     outro = selected["scenes"][1]["presenter_windows"][0]
     assert (intro["start"], intro["end"], intro["source_start"]) == (0, 3, 0)
     assert (outro["start"], outro["end"], outro["source_start"]) == (1, 4, 3)

@@ -25,7 +25,7 @@ from app.process import (
 )
 
 ANCHOR_ID = "headline60-brown-adult-01"
-VERSION = "experimental-presenter-v1"
+VERSION = "experimental-presenter-v2-cutout-sway"
 CROP_BOX = (228, 55, 495, 322)
 
 
@@ -79,6 +79,7 @@ def presenter_intervals(seconds: float) -> list[tuple[float, float]]:
 
 
 def _attach(plan: dict, output: Path, intervals: list[tuple[float, float]]) -> None:
+    matte = output.with_name("presenter-matte.mp4")
     cursor = 0.0
     for scene in plan["scenes"]:
         scene.pop("presenter_windows", None)
@@ -88,8 +89,8 @@ def _attach(plan: dict, output: Path, intervals: list[tuple[float, float]]) -> N
         for start, end in intervals:
             left, right = max(cursor, start), min(cursor + duration, end)
             if right - left > 1e-6:
-                windows.append({"path": str(output), "start": round(left - cursor, 8),
-                                "end": round(right - cursor, 8),
+                windows.append({"path": str(output), "matte": str(matte) if matte.is_file() else None,
+                                "start": round(left - cursor, 8), "end": round(right - cursor, 8),
                                 "source_start": round(source_cursor + left - start, 8)})
             source_cursor += end - start
         if windows:
@@ -168,12 +169,13 @@ def prepare_presenter(plan: dict, folder: Path, config: Settings, anchor_id: str
                       file_digest(config.root / "app/anchors/composite.py"), config.encoder])
         cache = config.data / "cache/presenter" / key
         cache.mkdir(parents=True, exist_ok=True)
-        target = folder / "presenter.mp4"
-        cached = restore_cached(cache / "presenter.mp4", target)
+        target, target_matte = folder / "presenter.mp4", folder / "presenter-matte.mp4"
+        cached = restore_cached(cache / "presenter.mp4", target) and restore_cached(cache / "presenter-matte.mp4", target_matte)
         metrics = {}
         if cached:
             try:
                 _verify(target, seconds)
+                _verify(target_matte, seconds)
                 metrics = json.loads((cache / "metrics.json").read_text())
             except (OSError, ValueError, RuntimeError, StopIteration):
                 cached = False
@@ -185,9 +187,12 @@ def prepare_presenter(plan: dict, folder: Path, config: Settings, anchor_id: str
             status["attempt_path"] = str(attempt)
             generated, metrics = _synthesize(config, audio, image, intervals, attempt)
             _verify(generated, seconds)
+            _verify(generated.with_name("presenter-matte.mp4"), seconds)
             store_cached(generated, cache / "presenter.mp4")
+            store_cached(generated.with_name("presenter-matte.mp4"), cache / "presenter-matte.mp4")
             save_json(cache / "metrics.json", metrics)
             restore_cached(cache / "presenter.mp4", target)
+            restore_cached(cache / "presenter-matte.mp4", target_matte)
         _attach(plan, target, intervals)
         status.update(status="completed", cached=cached, intervals=intervals, metrics=metrics,
                       duration=seconds, body_motion_generated=False, static_portrait_mouth_only=True,

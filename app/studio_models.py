@@ -24,7 +24,7 @@ class Evidence(StrictModel):
     fact: str = Field(min_length=10, max_length=300)
     conditions: str = Field(min_length=2, max_length=300)
     reviewed: bool = False
-    scope: Literal["facts", "source_outline"] = "facts"
+    scope: Literal["facts", "source_outline", "list_item"] = "facts"
     verification: Literal["manual", "source_matched"] = "manual"
     source_sha256: str = Field(default="", max_length=64)
     date_precision: Literal["day", "month"] = "day"
