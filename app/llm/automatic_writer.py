@@ -334,7 +334,7 @@ def _attempt(draft, config, evidence, count, schema, prompt, attempt):
                              for i, a in enumerate(texts) for b in texts[i + 1:])
         if near_duplicate or len(set(texts)) != len(texts) or sum(map(len, texts)) < (110 if count == 4 else 300):
             issues.append('같은 내용을 반복한 장면이 있거나 대본이 너무 짧습니다. 장면마다 다른 내용을 쓰세요.')
-        # Spoken length drives video length (~6 chars/s at 1.18x); keep the hook short.
+        # Spoken length drives video length (~6.5 chars/s at 1.28x); keep the hook short.
         limit = 75 if count == 4 else 70
         if len(texts[0]) > 36 or any(len(text) > limit for text in texts[1:]) or sum(map(len, texts)) > (260 if count == 4 else 480):
             issues.append(f'문장이 너무 깁니다. 장면1은 한 문장 30자 이내, 나머지는 {limit}자 이내로 쓰세요.')

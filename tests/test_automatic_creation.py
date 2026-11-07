@@ -128,7 +128,7 @@ def test_url_import_api_queues_auto_work_and_preserves_manual_review(tmp_path, m
             assert result.status_code == 200
             draft = result.json()
             assert draft['status'] == 'researching' and draft['resolution'] == 720
-            assert draft['narration_speed'] == 1.18 and draft['subtitle_style'] == 'dynamic'
+            assert draft['narration_speed'] == 1.28 and draft['subtitle_style'] == 'dynamic'
             assert draft['approved_revision'] is None
             blocked = await client.post(f'/api/drafts/{draft["id"]}/render', headers=headers, json={'revision': 1})
             assert blocked.status_code == 400

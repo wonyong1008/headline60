@@ -46,7 +46,7 @@ async function createContent(event) {
   const topic=$('new-content-topic').value.trim(),fiction=$('new-fiction-acknowledged').checked;
   if(topic.length<2)throw new Error('주제를 2자 이상 입력하세요.');
   if(mode==='adult_satire'&&!fiction)throw new Error('허구·성인 공감 풍자 표시 동의가 필요합니다.');
-  const draft=await api('/api/drafts','POST',{article_ids:[],topic,content_mode:mode,fiction_acknowledged:mode==='adult_satire'&&fiction,category:$('new-content-category').value,seconds:30,resolution:720,template:'story_explainer',edit_style:'reels_v3',narration_speed:1.18,subtitle_style:'dynamic'});
+  const draft=await api('/api/drafts','POST',{article_ids:[],topic,content_mode:mode,fiction_acknowledged:mode==='adult_satire'&&fiction,category:$('new-content-category').value,seconds:30,resolution:720,template:'story_explainer',edit_style:'reels_v3',narration_speed:1.28,subtitle_style:'dynamic'});
   location.href='/studio?draft='+encodeURIComponent(draft.id);
 }
 function jobVoiceLabel(profileId) {

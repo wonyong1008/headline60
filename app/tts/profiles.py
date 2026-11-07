@@ -49,6 +49,12 @@ def seed(config: Settings) -> None:
         for profile in presets:
             db.execute("INSERT OR IGNORE INTO voice_profiles VALUES (?, ?)",
                        (profile.voice_profile_id, profile.model_dump_json()))
+        if approved.is_file():
+            # The user-approved reels profile follows data/reels-voice.json (style prompt edits apply).
+            for profile in presets:
+                if profile.voice_profile_id == "reels-natural-sohee":
+                    db.execute("UPDATE voice_profiles SET payload=? WHERE id=?",
+                               (profile.model_dump_json(), profile.voice_profile_id))
 
 
 def listing(config: Settings) -> list[dict]:
