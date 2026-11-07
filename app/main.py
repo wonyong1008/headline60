@@ -295,15 +295,20 @@ def render_draft(key: str, value: Revision):
     return manager.render(key, value.revision)
 
 
+VoiceChoice = Literal["reels-natural-sohee", "reels-male-ryan"] | None
+
+
 class SubmissionCreate(StrictModel):
     url: str = Field(max_length=2000)
     anchor_id: Literal["headline60-brown-adult-01"] | None = None
+    voice_profile_id: VoiceChoice = None
 
 
 class SelectedSubmission(StrictModel):
     article_ids: list[str] = Field(min_length=1, max_length=20)
     category: str = "economy"
     anchor_id: Literal["headline60-brown-adult-01"] | None = None
+    voice_profile_id: VoiceChoice = None
 
 
 @app.get("/api/submissions")
@@ -313,14 +318,14 @@ def list_submissions():
 
 @app.post("/api/submissions")
 def register_submission(value: SubmissionCreate):
-    return submissions.create(value.url, value.anchor_id)
+    return submissions.create(value.url, value.anchor_id, value.voice_profile_id)
 
 
 @app.post("/api/submissions/selected")
 def register_selected_submission(value: SelectedSubmission):
     if value.category not in CATEGORIES:
         raise ValueError("지원하는 카테고리를 선택하세요.")
-    return submissions.create_selected(value.article_ids, value.category, value.anchor_id)
+    return submissions.create_selected(value.article_ids, value.category, value.anchor_id, value.voice_profile_id)
 
 
 @app.post("/api/submissions/{key}/retry")

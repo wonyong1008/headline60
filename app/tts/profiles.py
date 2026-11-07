@@ -38,6 +38,15 @@ def seed(config: Settings) -> None:
     ]:
         presets.append(VoiceProfile(voice_profile_id=key, name=name, engine="qwen3_mlx",
                                    model=MODEL, speaker="Sohee", style_prompt=style, speed=.96 if key == "female-news" else 1))
+    presets.append(VoiceProfile(
+        voice_profile_id="reels-male-ryan", name="릴스 · 남성 내레이터 Ryan", engine="qwen3_mlx", model=MODEL, speaker="ryan",
+        style_prompt=("A charismatic Korean male narrator with crisp, clear diction and a confident, stylish delivery. "
+                      "Warm mid-low voice, natural rhythm, energetic but never shouting. Speak like a popular short-form "
+                      "creator telling a friend something surprising."),
+        previous_style_prompt="Read in Korean clearly with natural rhythm and clean sentence endings.",
+        generation_parameters={"seed": 42, "temperature": 0.65, "top_p": 0.9, "top_k": 50},
+        phrasing="continuous", validated=True,
+        note="2026-11-07 남성 화자 비교(ryan·aiden·uncle_fu) 후 등록. data/voice_samples/male-compare-20261107."))
     approved = config.data / "reels-voice.json"
     if approved.is_file():
         record = json.loads(approved.read_text())
@@ -50,10 +59,11 @@ def seed(config: Settings) -> None:
         for profile in presets:
             db.execute("INSERT OR IGNORE INTO voice_profiles VALUES (?, ?)",
                        (profile.voice_profile_id, profile.model_dump_json()))
-        if approved.is_file():
-            # The user-approved reels profile follows data/reels-voice.json (style prompt edits apply).
+        if True:
+            # Code-defined reels profiles follow their current definition (style prompt edits apply).
             for profile in presets:
-                if profile.voice_profile_id == "reels-natural-sohee":
+                if profile.voice_profile_id in {"reels-natural-sohee", "reels-male-ryan"} and (
+                        profile.voice_profile_id != "reels-natural-sohee" or approved.is_file()):
                     db.execute("UPDATE voice_profiles SET payload=? WHERE id=?",
                                (profile.model_dump_json(), profile.voice_profile_id))
 

@@ -77,7 +77,8 @@ def search(query: str, require_korea: bool = False) -> list[dict]:
         description = value('ImageDescription')
         if not license_type or not author or EXPLICIT.search(name + ' ' + description):
             continue
-        if NOT_PHOTO.search(name) or GRIM.search(name + ' ' + description):
+        grim = GRIM.search(name + ' ' + description)
+        if NOT_PHOTO.search(name) or (grim and grim.group(0).lower().strip('-') not in query.lower()):
             continue
         if meta.get('NonFree', {}).get('value') == 'true' or value('Restrictions'):
             continue
@@ -103,6 +104,44 @@ def search(query: str, require_korea: bool = False) -> list[dict]:
 
 # Politics stories get institutional Korean scenes only; free-text searches return party
 # conventions, protests or unrelated "Korea" photos that misrepresent the story.
+# Symbolic photos for abstract topics (dream readings, fortune, money luck): the words a scene
+# uses decide the picture, so "재물" shows gold or cash and "흉몽" shows storm clouds.
+THEMES = [
+    (r'금은보화|보석|황금|금괴|금\b', ['gold bars', 'gold jewelry', 'gold coins pile']),
+    (r'재물|돈|금전|부자|수익|이익|월급|재산', ['stack of cash money', 'gold coins pile', 'piggy bank coins', 'gold bars']),
+    (r'복권|로또|당첨', ['lottery ticket', 'bingo balls', 'stack of cash money']),
+    (r'행운|길몽|복이|좋은 소식|기쁜|기회', ['four leaf clover', 'maneki neko lucky cat', 'sunrise over sea', 'rainbow sky']),
+    (r'불행|흉몽|불길|나쁜|걱정|근심|위험|손해|사고', ['dark storm clouds', 'rain on window', 'broken glass', 'fog forest path']),
+    (r'태몽|임신|출산|아기', ['baby shoes', 'newborn baby hand', 'pregnant woman silhouette']),
+    (r'돼지', ['pig farm piglet', 'pig farm', 'piggy bank coins']),
+    (r'뱀', ['snake grass', 'snake coiled']),
+    (r'용\b|용띠|용이', ['dragon statue Korea', 'dragon sculpture temple']),
+    (r'호랑이', ['tiger', 'tiger painting']),
+    (r'물고기|잉어', ['koi fish pond', 'goldfish']),
+    (r'물|바다|강물|홍수', ['ocean waves', 'river water flowing', 'rain flood street']),
+    (r'불\b|화재|불타', ['bonfire flames', 'candle flame dark']),
+    (r'죽음|시체|장례', ['cemetery fog', 'white chrysanthemum']),
+    (r'사랑|연애|결혼|연인', ['couple holding hands', 'wedding rings', 'red roses bouquet']),
+    (r'시험|합격|공부|학교', ['library bookshelves', 'graduation cap', 'pencil notebook desk']),
+    (r'직장|회사|승진|사업|일자리', ['office desk laptop', 'business handshake', 'skyscraper office building']),
+    (r'건강|병원|아프|치료', ['hospital corridor', 'stethoscope doctor', 'medicine pills']),
+    (r'꿈|잠|수면|침대', ['bed sleeping night', 'full moon night sky', 'starry night sky', 'pillow bedroom morning']),
+    (r'집|이사|아파트|부동산', ['apartment buildings Seoul', 'keys door lock', 'moving boxes']),
+    (r'자동차|운전|차\b', ['car driving road', 'car keys']),
+    (r'음식|먹는|요리|밥', ['Korean food table', 'cooking kitchen']),
+    (r'여행|비행기|해외', ['airplane window', 'suitcase airport', 'passport travel']),
+]
+
+
+def theme_queries(text: str) -> list[str]:
+    """Symbolic search terms for the words in a scene, most specific first."""
+    found = []
+    for pattern, queries in THEMES:
+        if re.search(pattern, text):
+            found.extend(queries)
+    return list(dict.fromkeys(found))
+
+
 # Neutral Korean everyday scenes for stories with no concrete subject (dreams, fortune, advice).
 NEUTRAL_SCENES = ['Seoul city street', 'Han River park Seoul', 'Namsan Seoul Tower', 'Seoul night skyline',
                   'Seoul subway station', 'Gwanghwamun Square Seoul', 'Busan Haeundae beach', 'Seoul apartment buildings']
@@ -117,11 +156,14 @@ def query_variants(scene, category: str, index: int = 0) -> list[str]:
         rotated = POLITICS_SCENES[index % len(POLITICS_SCENES):] + POLITICS_SCENES[:index % len(POLITICS_SCENES)]
         return rotated
     first = query_for(scene)
+    themed = theme_queries(f'{scene.headline} {scene.narration} {scene.visual_query}')
+    themed = themed[index % len(themed):] + themed[:index % len(themed)] if themed else []
     if category == 'trending':
-        # Blogs about dreams, fortune or advice have no real subject to photograph: one Korean
-        # attempt for the scene's subject, then neutral everyday Korean scenes in rotation.
+        # Blogs about dreams, fortune or advice have no real subject to photograph: the scene's
+        # words pick symbolic pictures (gold, cash, clover, storm clouds…), then one Korean attempt
+        # for the stated subject, then neutral everyday Korean scenes in rotation.
         rotated = NEUTRAL_SCENES[index % len(NEUTRAL_SCENES):] + NEUTRAL_SCENES[:index % len(NEUTRAL_SCENES)]
-        return list(dict.fromkeys([f'{first} Korea', *rotated]))
+        return list(dict.fromkeys([*themed[:3], f'{first} Korea', *rotated]))
     words = [w for w in first.split() if w.lower() not in ABSTRACT]
     # Commons matches every word, so long queries often return nothing; try a shorter subject too.
     base = list(dict.fromkeys(q for q in (first, ' '.join(words), ' '.join(words[:2]) if len(words) > 2 else '') if q))[:3]
@@ -131,7 +173,7 @@ def query_variants(scene, category: str, index: int = 0) -> list[str]:
         if 'korea' not in q.lower() and 'seoul' not in q.lower():
             ordered.append(f'{q} Korea')
         ordered.append(q)
-    return list(dict.fromkeys([*ordered, CATEGORY_QUERIES.get(category, CATEGORY_QUERIES['trending'])]))
+    return list(dict.fromkeys([*ordered, *themed[:2], CATEGORY_QUERIES.get(category, CATEGORY_QUERIES['trending'])]))
 
 
 def ensure_media(config: Settings, script, category: str) -> dict:

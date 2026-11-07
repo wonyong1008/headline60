@@ -617,7 +617,8 @@ def test_trending_stories_use_neutral_korean_scenes_and_loose_library_tags_do_no
     from app.media.library import register_upload
     from app.script.models import Scene, Script
     scene = Scene(headline='똥꿈', narration='똥 싸는 꿈 이야기예요.', visual_query='침대 / bed dirt')
-    assert discovery.query_variants(scene, 'trending')[:2] == ['bed dirt Korea', 'Seoul city street']
+    variants = discovery.query_variants(scene, 'trending')
+    assert variants[0] == 'bed sleeping night' and 'bed dirt Korea' in variants and 'Seoul city street' in variants
     config = Settings(root=tmp_path)
     from io import BytesIO
 
@@ -639,3 +640,13 @@ def test_blog_fragments_are_stitched_into_sentences_and_short_line_blogs_are_not
     monkeypatch.setattr(sources, 'fetch_public', lambda url, **k: (url, html.encode(), 'text/html; charset=utf-8'))
     page = sources.source_page('https://m.blog.naver.com/someone/1')
     assert page['lines'][0] == '돼지 꿈은 복권에 당첨되는 길몽일까요?'
+
+
+def test_abstract_topics_get_symbolic_photo_queries_from_their_words():
+    from app.media import discovery
+    from app.script.models import Scene
+    assert discovery.theme_queries('돼지 꿈은 재물이나 복권 당첨을 뜻하는 길몽이에요')[:3] == ['stack of cash money', 'gold coins pile', 'piggy bank coins']
+    scene = Scene(headline='흉몽일까?', narration='뱀에게 물리는 꿈은 불길한 신호로 풀이돼요.', visual_query='뱀 / snake dream')
+    variants = discovery.query_variants(scene, 'trending')
+    assert variants[0] in {'dark storm clouds', 'snake grass'} and 'Seoul city street' in variants
+    assert discovery.theme_queries('별다른 상징이 없는 문장') == []

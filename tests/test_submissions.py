@@ -385,3 +385,17 @@ def test_long_internal_silences_are_shortened_before_the_quality_gate(tmp_path):
         stream.writeframes(struct.pack(f"<{len(samples)}h", *samples))
     result = make_pcm(raw, tmp_path / "out.wav", 1.0)
     assert result["before"]["longest_internal_silence"] < 1.5 and result["after"]["duration"] < 4.8  # 4 s stall gone
+
+
+def test_submission_keeps_the_chosen_voice_and_falls_back_safely(system, monkeypatch):
+    from app.jobs import submissions as module
+    config, _manager, _youtube, queue, _renders = system
+    monkeypatch.setattr(module.profiles, "listing", lambda cfg: [
+        {"voice_profile_id": "reels-natural-sohee", "available": True},
+        {"voice_profile_id": "reels-male-ryan", "available": True}])
+    male = queue.create("https://example.org/m", voice_profile_id="reels-male-ryan")
+    assert queue.get(male["id"])["voice_profile_id"] == "reels-male-ryan"
+    assert studio_store.get(config, queue.get(male["id"])["draft_id"])["voice_profile_id"] == "reels-male-ryan"
+    monkeypatch.setattr(module.profiles, "listing", lambda cfg: [{"voice_profile_id": "reels-natural-sohee", "available": True}])
+    female = queue.create("https://example.org/f", voice_profile_id="reels-male-ryan")  # male voice not installed here
+    assert studio_store.get(config, queue.get(female["id"])["draft_id"])["voice_profile_id"] == "reels-natural-sohee"
