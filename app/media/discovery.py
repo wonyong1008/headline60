@@ -100,8 +100,18 @@ def search(query: str, require_korea: bool = False) -> list[dict]:
     return results
 
 
-def query_variants(scene, category: str) -> list[str]:
+# Politics stories get institutional Korean scenes only; free-text searches return party
+# conventions, protests or unrelated "Korea" photos that misrepresent the story.
+POLITICS_SCENES = ['National Assembly building Yeouido Seoul', 'Cheong Wa Dae Blue House Seoul',
+                   'Government Complex Sejong', 'Yongsan presidential office Seoul', 'Seoul Government Complex Gwanghwamun',
+                   'National Assembly plenary chamber Seoul', 'Taegukgi flag Seoul', 'Gwanghwamun Square Seoul']
+
+
+def query_variants(scene, category: str, index: int = 0) -> list[str]:
     """Scene query, then the same without abstract words, then a topic-level photo."""
+    if category == 'politics':
+        rotated = POLITICS_SCENES[index % len(POLITICS_SCENES):] + POLITICS_SCENES[:index % len(POLITICS_SCENES)]
+        return rotated
     first = query_for(scene)
     words = [w for w in first.split() if w.lower() not in ABSTRACT]
     # Commons matches every word, so long queries often return nothing; try a shorter subject too.
@@ -127,12 +137,12 @@ def ensure_media(config: Settings, script, category: str) -> dict:
     for index, scene in enumerate(script.scenes):
         if scene.asset_id or scene.chart or scene.visual_type == 'data_chart':
             continue
-        match = select_visual(scene, [a for a in assets if a['asset_id'] not in used], 0)
+        match = None if category == 'politics' else select_visual(scene, [a for a in assets if a['asset_id'] not in used], 0)
         if match:
             used.add(match['asset_id'])
             scene.asset_id = match['asset_id']
             continue
-        for query in query_variants(scene, category):
+        for query in query_variants(scene, category, index):
             if offline or len(searched) >= 40 or time.perf_counter() - started > 150:
                 break
             if query not in results:
