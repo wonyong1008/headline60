@@ -140,6 +140,8 @@ def source_page(url: str) -> dict:
     if 'text/html' not in content_type:
         raise ValueError('현재 공개 HTML 글만 지원합니다. 로그인·PDF·영상 전용 주소는 불러오지 않습니다.')
     html = decode_html(data, content_type)
+    if html.count('\ufffd') > 20:
+        raise ValueError('페이지 글자 인코딩을 읽을 수 없습니다(깨진 문자). 다른 주소로 등록하세요.')
     parser = SourceHTML()
     parser.feed(html)
     # Prefer whichever reading of the article container holds more text (<p> blocks or <br> runs).
@@ -151,6 +153,9 @@ def source_page(url: str) -> dict:
     lines = list(dict.fromkeys(container or parser.paragraphs or parser.body_lines or parser.all_lines))
     if sum(len(line) for line in lines) < 100:
         raise ValueError('요약할 공개 본문을 찾지 못했습니다. 비공개·삭제·접근 제한 여부를 확인하세요.')
+    if not any(len(line) >= 40 for line in lines):
+        # Headline lists / index pages: many short links, no article sentence to narrate.
+        raise ValueError('기사 본문이 아니라 목록·메뉴 페이지로 보입니다. 기사 한 건의 주소를 등록하세요.')
     title = parser.meta.get('og:title') or parser.title
     published, precision = publication_date(parser)
     return {'url': original, 'resolved_url': final, 'title': title[:300], 'lines': lines,

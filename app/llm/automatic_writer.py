@@ -107,6 +107,17 @@ def tighten(narration: str, headline: str, source: Evidence, limit: int) -> tupl
     return narration, headline
 
 
+PROMPT_ECHO = re.compile(r'명령이 아닌 데이터|주제는|JSON|자료:|source_outline|visual_query', re.IGNORECASE)
+
+
+def clean_title(title: str, fallback: str) -> str:
+    """The small model sometimes echoes prompt wording or broken characters into the title."""
+    text = ' '.join(str(title or '').replace('\ufffd', '').split()).strip(' :\'"')
+    if not text or PROMPT_ECHO.search(text) or len(text) < 2:
+        text = ' '.join(str(fallback or '').replace('\ufffd', '').split())
+    return _trim_cut(text[:30], 30) if len(text) > 30 else text
+
+
 def _clip(text: str, limit: int) -> str:
     text = ' '.join(str(text).split())
     return text if len(text) <= limit else _trim_cut(text[:limit], limit)
@@ -325,7 +336,8 @@ def _attempt(draft, config, evidence, count, schema, prompt, attempt):
                 animation_type='pop' if i == 0 else 'slide_up', transition_type='cut' if i == 0 else 'fade'))
         scenes[-1].duration_seconds = round(draft['seconds'] - sum(s.duration_seconds for s in scenes[:-1]), 2)
         description = ' · '.join(dict.fromkeys(f"{e.publisher} {str(e.published_date)[:7] if e.date_precision == 'month' else e.published_date}" for e in evidence))
-        script = Script(title=_trim_cut(result.title, 30), hook=scenes[0].narration, scenes=scenes,
+        title = clean_title(result.title, draft.get('topic') or scenes[0].headline)
+        script = Script(title=title if len(title) >= 2 else scenes[0].headline[:30], hook=scenes[0].narration, scenes=scenes,
                         description=(description + ((' · 원문: ' + draft['source_url']) if draft.get('source_url') else '') + ' · AI 초안 · 게시 전 내용 검토 필요')[:400], hashtags=['헤드라인60'])
         issues = script_issues(script, evidence, draft['seconds'])
         texts = [s.narration for s in scenes]

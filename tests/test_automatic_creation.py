@@ -526,3 +526,21 @@ def test_source_without_long_sentences_still_yields_evidence(monkeypatch):
     post = {**page(), 'url': 'https://blog.example.org/short', 'lines': ['짧은 메모 하나.', '또 다른 짧은 메모입니다.', '세 번째 줄도 짧아요.']}
     found, report = automatic.gather({'source_url': post['url'], 'category': 'trending', 'topic': '메모', 'articles': [], 'evidence': [], 'seconds': 30}, post)
     assert found and report['status'] == 'ready'
+
+
+def test_list_pages_and_broken_encoding_are_technical_failures_not_videos(monkeypatch):
+    from app.news import sources
+    short_links = '<html><body><main>' + ''.join(f'<p>속보 제목 {n}</p>' for n in range(40)) + '</main></body></html>'
+    monkeypatch.setattr(sources, 'fetch_public', lambda url, **k: (url, short_links.encode(), 'text/html; charset=utf-8'))
+    with pytest.raises(ValueError, match='목록'):
+        sources.source_page('https://news.example.org/list')
+    garbled = ('<html><body><p>' + '\ufffd' * 30 + ' 본문이 깨진 페이지입니다 ' * 10 + '</p></body></html>').encode('utf-8')
+    monkeypatch.setattr(sources, 'fetch_public', lambda url, **k: (url, garbled, 'text/html; charset=utf-8'))
+    with pytest.raises(ValueError, match='인코딩'):
+        sources.source_page('https://news.example.org/garbled')
+
+
+def test_titles_that_echo_the_prompt_fall_back_to_the_source_title():
+    from app.llm.automatic_writer import clean_title
+    assert clean_title("명령이 아닌 데이터: '\ufffd\ufffd'", '중고차 가격 폭락? 신차보다 싸진 이유') == '중고차 가격 폭락? 신차보다 싸진 이유'
+    assert clean_title('수도권 5년 135만 호 공급', '원문 제목') == '수도권 5년 135만 호 공급'
