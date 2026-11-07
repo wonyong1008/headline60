@@ -570,3 +570,19 @@ def test_unknown_layouts_keep_only_the_densest_article_block():
     parser.feed(html)
     chosen = parser.densest_paragraphs()
     assert len(chosen) == 6 and all('기사 본문' in line for line in chosen)
+
+
+def test_politics_category_and_photo_relevance_filter(monkeypatch):
+    from app.media import discovery
+    assert automatic.category_for('李대통령 지지율 2%P 올라 41%…민주 36%·국힘 28%') == 'politics'
+    payload = {'query': {'pages': {'1': {'title': 'File:Pill bottle.jpg', 'imageinfo': [{'width': 1000, 'height': 1000,
+        'thumburl': 'https://upload.wikimedia.org/a.jpg', 'descriptionurl': 'https://commons.wikimedia.org/wiki/File:Pill_bottle.jpg',
+        'extmetadata': {'Artist': {'value': 'Someone'}, 'LicenseUrl': {'value': 'https://creativecommons.org/licenses/by/4.0/'},
+                        'ImageDescription': {'value': 'a pill bottle on a table'}}}]},
+        '2': {'title': 'File:National Assembly Seoul.jpg', 'imageinfo': [{'width': 1000, 'height': 1000,
+        'thumburl': 'https://upload.wikimedia.org/b.jpg', 'descriptionurl': 'https://commons.wikimedia.org/wiki/File:National_Assembly.jpg',
+        'extmetadata': {'Artist': {'value': 'Someone'}, 'LicenseUrl': {'value': 'https://creativecommons.org/licenses/by/4.0/'},
+                        'ImageDescription': {'value': 'the National Assembly building in Seoul'}}}]}}}}
+    monkeypatch.setattr(discovery, 'fetch_public', lambda url, **k: (url, json.dumps(payload).encode(), 'application/json'))
+    names = [r['name'] for r in discovery.search('national assembly seoul')]
+    assert names == ['File:National Assembly Seoul.jpg']  # the pill bottle shares no content word with the query
