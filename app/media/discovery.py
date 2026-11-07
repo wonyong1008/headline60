@@ -118,8 +118,11 @@ def query_variants(scene, category: str) -> list[str]:
 def ensure_media(config: Settings, script, category: str) -> dict:
     """Give every scene its own licensed photo where possible and pin it to that scene."""
     started, imported, errors, searched = time.perf_counter(), [], [], set()
+    def korean_enough(asset):
+        text = ' '.join([asset.get('name', ''), asset.get('description', ''), *asset.get('tags', [])]).lower()
+        return category != 'politics' or bool(KOREA.search(text))
     assets = [a for a in listing(config) if a['category'] == category and a['usage_status'] == 'approved'
-              and a['media_type'] in {'image', 'video'} and not NOT_PHOTO.search(a.get('name', ''))]
+              and a['media_type'] in {'image', 'video'} and not NOT_PHOTO.search(a.get('name', '')) and korean_enough(a)]
     results, used, offline = {}, set(), False
     for index, scene in enumerate(script.scenes):
         if scene.asset_id or scene.chart or scene.visual_type == 'data_chart':
@@ -174,7 +177,7 @@ def ensure_media(config: Settings, script, category: str) -> dict:
         if not scene.asset_id:
             # Last resort: any approved photo in the library, so no scene falls back to a plain graphic.
             pool = [a for a in listing(config) if a['usage_status'] == 'approved' and a['media_type'] == 'image'
-                    and not NOT_PHOTO.search(a.get('name', '')) and a['asset_id'] not in used]
+                    and not NOT_PHOTO.search(a.get('name', '')) and a['asset_id'] not in used and korean_enough(a)]
             def neutral(asset):  # city/landscape scenes read fine behind any topic; pills or cars do not
                 text = ' '.join([asset.get('name', ''), asset.get('description', ''), *asset.get('tags', [])]).lower()
                 return not re.search(r'seoul|korea|city|street|skyline|river|park|building', text)
