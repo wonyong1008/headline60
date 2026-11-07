@@ -76,11 +76,12 @@ class Manager:
         try:
             source = None
             unreviewed_only = not any(e.get("reviewed") for e in draft.get("evidence", []))
+            # Automatic (URL-queue) drafts always re-read the source: evidence must reflect the
+            # current extraction rules, not whatever an earlier attempt left behind.
             if draft.get("source_url") and (not draft.get("source_loaded") or draft.get("source_extract_version") != SOURCE_EXTRACT_VERSION
-                                            or (unreviewed_only and not draft.get("evidence"))):
+                                            or (unreviewed_only and (not draft.get("evidence") or draft.get("automatic")))):
                 source = source_page(draft["source_url"])
-                if draft.get("source_extract_version") != SOURCE_EXTRACT_VERSION:
-                    draft["evidence"] = [e for e in draft.get("evidence", []) if e.get("verification") != "source_matched" or e.get("reviewed")]
+                draft["evidence"] = [e for e in draft.get("evidence", []) if e.get("verification") != "source_matched" or e.get("reviewed")]
                 draft.update(topic=source["title"][:200], category=category_for(source["title"]),
                              source_loaded=True, source_outline_loaded=True, source_extract_version=SOURCE_EXTRACT_VERSION)
                 draft["articles"] = [{"id": article_id(source["url"]), "url": source["url"], "title": source["title"],

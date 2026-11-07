@@ -57,7 +57,10 @@ def query_for(scene) -> str:
     return scene.visual_query[:80]
 
 
-def search(query: str) -> list[dict]:
+KOREA = re.compile(r'korea|seoul|busan|incheon|daegu|gwangju|daejeon|한국|서울')
+
+
+def search(query: str, require_korea: bool = False) -> list[dict]:
     params = {'action': 'query', 'format': 'json', 'generator': 'search', 'gsrsearch': query + ' -filetype:svg -intitle:nude',
               'gsrnamespace': 6, 'gsrlimit': 15, 'prop': 'imageinfo', 'iiprop': 'url|extmetadata|size', 'iiurlwidth': 960}
     _, data, _ = fetch_public('https://commons.wikimedia.org/w/api.php?' + urlencode(params),
@@ -84,8 +87,8 @@ def search(query: str) -> list[dict]:
         content_words = [word for word in terms(query) if word not in GENERIC and len(word) >= 3]
         if content_words and not any(word in haystack for word in content_words):
             continue
-        if 'korea' in query.lower() and not re.search(r'korea|seoul|busan|incheon|daegu|한국|서울', haystack):
-            continue  # a "… Korea" query must not be answered with another country's scene
+        if (require_korea or 'korea' in query.lower()) and not KOREA.search(haystack):
+            continue  # Korean politics/news must not be illustrated with another country's parliament
         if min(info.get('width', 0), info.get('height', 0)) < 640:
             continue
         download = info.get('thumburl') or info.get('url', '')
@@ -132,7 +135,7 @@ def ensure_media(config: Settings, script, category: str) -> dict:
             if query not in results:
                 searched.add(query)
                 try:
-                    results[query] = search(query)
+                    results[query] = search(query, require_korea=category == 'politics')
                 except (httpx.HTTPError, OSError, ValueError, KeyError) as exc:
                     errors.append(str(exc)[:200])
                     results[query] = []

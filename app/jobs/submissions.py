@@ -158,7 +158,8 @@ class SubmissionQueue:
                 {"job_id": row["job_id"], "youtube_url": row["youtube_url"], "rebuilt_at": datetime.now(UTC).isoformat()})
             # A new revision keeps the old job (and its YouTube upload record) untouched.
             draft.update(script=None, latest_job_id=None, status="failed", error=None, seconds=60, narration_speed=1.28,
-                         approved_revision=None, content_review=None, content_warnings=[])
+                         approved_revision=None, content_review=None, content_warnings=[],
+                         evidence=[e for e in draft.get("evidence", []) if e.get("reviewed")])  # re-extract on rebuild
             draft["revision"] += 1
             studio_store.save(self.config, draft, expected)
             with store.connect(self.config) as db:

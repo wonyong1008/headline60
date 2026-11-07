@@ -13,7 +13,7 @@ from app.news.sources import SourceHTML, fetch_public, source_page, terms
 
 ED_SOURCE = 'https://www.niddk.nih.gov/health-information/urologic-diseases/erectile-dysfunction/treatment'
 # Bump when extraction changes; unreviewed automatic evidence is then rebuilt.
-SOURCE_EXTRACT_VERSION = 5
+SOURCE_EXTRACT_VERSION = 6
 # "(서울=연합뉴스) 홍길동 기자 = … 2026.11.6 xyz@yna.co.kr", "사진=…", "▶ 관련기사"
 CAPTION = re.compile(r'[\w.-]+@[\w.-]+\.\w+|기자\s*=|\(\s*[가-힣]+\s*=\s*[가-힣]+(?:뉴스|일보)\s*\)|사진\s*=|^\s*[▶▷■◆※]|\[사진|\(사진')
 HEALTH = re.compile(r'건강|의약|치료|부작용|발기|정력|케겔|피임|임신|다이어트|탈모|영양제')

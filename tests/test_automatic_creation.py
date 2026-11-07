@@ -102,7 +102,7 @@ def test_media_discovery_rejects_unclear_noncommercial_and_explicit_images(monke
 def test_media_search_failure_falls_back_without_failing_script(tmp_path, monkeypatch):
     from app.media import discovery
     from app.script.models import Scene, Script
-    monkeypatch.setattr(discovery, 'search', lambda *a: (_ for _ in ()).throw(httpx.ConnectError('offline')))
+    monkeypatch.setattr(discovery, 'search', lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectError('offline')))
     scene = Scene(headline='운동', narration='운동 이야기를 해요.', visual_query='운동 기구')
     result = discovery.ensure_media(Settings(root=tmp_path), Script(title='운동 이야기', description='운동에 관한 기술 검증 샘플입니다.', scenes=[scene]*6), 'health')
     assert not result['imported'] and len(result['errors']) == 1
@@ -150,7 +150,7 @@ def test_downloaded_media_records_license_and_original_author(tmp_path, monkeypa
         'source_url': 'https://commons.wikimedia.org/wiki/File:Exercise_gym.jpg',
         'download_url': 'https://upload.wikimedia.org/example.jpg', 'license_type': 'CC-BY-4.0',
         'license_url': discovery.LICENSE_URLS['CC-BY-4.0'], 'description': 'Exercise equipment'}
-    monkeypatch.setattr(discovery, 'search', lambda query: [candidate])
+    monkeypatch.setattr(discovery, 'search', lambda query, **k: [candidate])
     monkeypatch.setattr(discovery, 'fetch_public', lambda *a, **k: (candidate['download_url'], content.getvalue(), 'image/jpeg'))
     scene = Scene(headline='운동', narration='운동과 활동량에 관한 이야기입니다.', visual_query='운동 기구')
     config = Settings(root=tmp_path)
@@ -433,7 +433,7 @@ def test_each_scene_gets_its_own_pinned_photo_and_charts_are_skipped(tmp_path, m
                 'download_url': f'https://thumb.wikimedia.org/{n}.jpg', 'license_type': 'CC-BY-SA-2.0',
                 'license_url': discovery.LICENSE_URLS['CC-BY-SA-2.0'], 'description': 'used cars parked'}
     queries = []
-    def search(query):
+    def search(query, **kwargs):
         queries.append(query)
         return [] if 'decline' in query else [result(len(queries) * 10 + i, 'Used car lot') for i in range(3)]
     monkeypatch.setattr(discovery, 'search', search)
