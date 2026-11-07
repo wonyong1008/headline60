@@ -610,3 +610,22 @@ def test_newspaper_hanja_is_read_in_korean_for_tts():
     assert normalize('조작기소 특검법안, 與주도로 국회통과') == '조작기소 특검법안, 여주도로 국회통과'
     assert normalize('李대통령 지지율 2%P 올라').startswith('이대통령')
     assert '龍' not in normalize('龍 모양')
+
+
+def test_trending_stories_use_neutral_korean_scenes_and_loose_library_tags_do_not_match(tmp_path, monkeypatch):
+    from app.media import discovery
+    from app.media.library import register_upload
+    from app.script.models import Scene, Script
+    scene = Scene(headline='똥꿈', narration='똥 싸는 꿈 이야기예요.', visual_query='침대 / bed dirt')
+    assert discovery.query_variants(scene, 'trending')[:2] == ['bed dirt Korea', 'Seoul city street']
+    config = Settings(root=tmp_path)
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+    buffer = BytesIO(); PILImage.new('RGB', (900, 1200), 'gray').save(buffer, 'JPEG')
+    register_upload(config, buffer.getvalue(), name='Dirt bike on a truck bed', category='trending',
+                    license_type='CC-BY-4.0', attribution='Someone', rights_confirmed=True, tags=['bed', 'dirt'])
+    monkeypatch.setattr(discovery, 'search', lambda query, **k: [])
+    script = Script(title='꿈 해몽', description='꿈 해몽 자료 검증입니다.', scenes=[scene] * 4)
+    report = discovery.ensure_media(config, script, 'trending')
+    assert script.scenes[0].asset_id is None or '보관 사진' in ' '.join(report['errors'])  # never a loose one-tag library match

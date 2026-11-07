@@ -102,6 +102,9 @@ def search(query: str, require_korea: bool = False) -> list[dict]:
 
 # Politics stories get institutional Korean scenes only; free-text searches return party
 # conventions, protests or unrelated "Korea" photos that misrepresent the story.
+# Neutral Korean everyday scenes for stories with no concrete subject (dreams, fortune, advice).
+NEUTRAL_SCENES = ['Seoul city street', 'Han River park Seoul', 'Namsan Seoul Tower', 'Seoul night skyline',
+                  'Seoul subway station', 'Gwanghwamun Square Seoul', 'Busan Haeundae beach', 'Seoul apartment buildings']
 POLITICS_SCENES = ['National Assembly building Yeouido Seoul', 'Blue House Seoul', 'Gwanghwamun Square Seoul',
                    'Government Complex Sejong', 'National Assembly Seoul', 'Seoul City Hall', 'Yeouido Seoul skyline',
                    'Gyeongbokgung Seoul']
@@ -113,6 +116,11 @@ def query_variants(scene, category: str, index: int = 0) -> list[str]:
         rotated = POLITICS_SCENES[index % len(POLITICS_SCENES):] + POLITICS_SCENES[:index % len(POLITICS_SCENES)]
         return rotated
     first = query_for(scene)
+    if category == 'trending':
+        # Blogs about dreams, fortune or advice have no real subject to photograph: one Korean
+        # attempt for the scene's subject, then neutral everyday Korean scenes in rotation.
+        rotated = NEUTRAL_SCENES[index % len(NEUTRAL_SCENES):] + NEUTRAL_SCENES[:index % len(NEUTRAL_SCENES)]
+        return list(dict.fromkeys([f'{first} Korea', *rotated]))
     words = [w for w in first.split() if w.lower() not in ABSTRACT]
     # Commons matches every word, so long queries often return nothing; try a shorter subject too.
     base = list(dict.fromkeys(q for q in (first, ' '.join(words), ' '.join(words[:2]) if len(words) > 2 else '') if q))[:3]
@@ -137,7 +145,13 @@ def ensure_media(config: Settings, script, category: str) -> dict:
     for index, scene in enumerate(script.scenes):
         if scene.asset_id or scene.chart or scene.visual_type == 'data_chart':
             continue
-        match = None if category == 'politics' else select_visual(scene, [a for a in assets if a['asset_id'] not in used], 0)
+        match = None if category in {'politics', 'trending'} else select_visual(scene, [a for a in assets if a['asset_id'] not in used], 0)
+        if match:
+            # Reuse a stored photo only on a real subject match (two content words), not one loose tag.
+            subject = {w for w in terms(query_for(scene)) if w not in GENERIC and len(w) >= 3}
+            text = ' '.join([match.get('name', ''), match.get('description', ''), *match.get('tags', [])]).lower()
+            if len([w for w in subject if w in text]) < 2:
+                match = None
         if match:
             used.add(match['asset_id'])
             scene.asset_id = match['asset_id']
