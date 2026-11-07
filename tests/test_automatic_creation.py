@@ -544,3 +544,16 @@ def test_titles_that_echo_the_prompt_fall_back_to_the_source_title():
     from app.llm.automatic_writer import clean_title
     assert clean_title("명령이 아닌 데이터: '\ufffd\ufffd'", '중고차 가격 폭락? 신차보다 싸진 이유') == '중고차 가격 폭락? 신차보다 싸진 이유'
     assert clean_title('수도권 5년 135만 호 공급', '원문 제목') == '수도권 5년 135만 호 공급'
+
+
+def test_naver_style_timestamps_and_undated_user_sources(monkeypatch):
+    parser = SourceHTML()
+    parser.feed('<span class="t" data-date-time="2026-11-06 18:06:39">2026.11.06. 오후 6:06</span><p>본문</p>')
+    assert publication_date(parser) == ('2026-11-06', 'day')
+    parser = SourceHTML()
+    parser.feed('<p>2026.11.06. 오후 6:06</p>')
+    assert publication_date(parser) == ('2026-11-06', 'day')
+    monkeypatch.setattr(automatic, 'discover', lambda query: [])
+    undated = {**page(), 'url': 'https://blog.example.org/undated', 'published_date': None, 'date_precision': 'unknown'}
+    found, report = automatic.gather({'source_url': undated['url'], 'category': 'trending', 'topic': '주택', 'articles': [], 'evidence': [], 'seconds': 30}, undated)
+    assert found and report['status'] == 'ready' and '발행일 미확인' in found[0]['conditions']

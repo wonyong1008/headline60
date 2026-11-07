@@ -59,6 +59,10 @@ class SourceHTML(HTMLParser):
         attrs = dict(attrs)
         if tag == 'meta':
             self.meta[attrs.get('property', attrs.get('name', '')).lower()] = attrs.get('content', '')
+        for key, value in attrs.items():
+            # Naver news and similar sites put the publication timestamp in data attributes.
+            if key in {'data-date-time', 'datetime', 'data-published', 'data-pubdate'} and value and 'datetime-attr' not in self.meta:
+                self.meta['datetime-attr'] = value
         if tag == 'a' and attrs.get('href'):
             self.current_link = [attrs['href'], '']
         # Known article containers, including schema.org articleBody used by many Korean news sites.
@@ -165,7 +169,7 @@ def source_page(url: str) -> dict:
 
 
 def publication_date(parser: SourceHTML) -> tuple[str | None, str]:
-    for key in ('article:published_time', 'datepublished', 'date', 'pubdate', 'article:modified_time', 'datemodified'):
+    for key in ('article:published_time', 'datepublished', 'date', 'pubdate', 'datetime-attr', 'article:modified_time', 'datemodified'):
         value = parser.meta.get(key, '')
         match = re.search(r'(20\d{2})[-./](\d{1,2})[-./](\d{1,2})', value)
         if match:
@@ -177,7 +181,7 @@ def publication_date(parser: SourceHTML) -> tuple[str | None, str]:
                 pass
     # Naver's publication timestamp and official Korean publication lines.
     for line in parser.all_lines:
-        if re.fullmatch(r'20\d{2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{1,2}\.?(?:\s+\d{1,2}:\d{2})?', line):
+        if re.fullmatch(r'20\d{2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{1,2}\.?(?:\s*(?:오전|오후)?\s*\d{1,2}:\d{2}(?::\d{2})?)?', line):
             try:
                 result = date(*map(int, re.findall(r'\d+', line)[:3]))
                 if result <= date.today():

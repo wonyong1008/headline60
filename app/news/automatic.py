@@ -41,7 +41,17 @@ def discover(query: str) -> list[str]:
     return list(dict.fromkeys(url for _, url in sorted(ranked, reverse=True)))[:5]
 
 
+def with_date(page: dict) -> dict:
+    """A page without a readable publication date is still usable as the user's own source:
+    record the access date and say so in the evidence conditions."""
+    if page.get('published_date'):
+        return page
+    return {**page, 'published_date': date.today().isoformat(), 'date_precision': 'day', 'date_unknown': True}
+
+
 def excerpts(page: dict, query: str, *, official_only: bool = True, fallback: bool = False, limit: int = 4) -> list[dict]:
+    if fallback:
+        page = with_date(page)
     if not page['published_date'] or (official_only and not official_url(page['url'])):
         return []
     wanted = terms(query)
@@ -96,7 +106,7 @@ def excerpts(page: dict, query: str, *, official_only: bool = True, fallback: bo
         result.append({'id': hashlib.sha256((page['url'] + quote).encode()).hexdigest()[:12],
             'url': page['url'], 'publisher': page['publisher'][:100], 'title': page['title'],
             'published_date': page['published_date'], 'accessed_date': date.today().isoformat(),
-            'fact': fact, 'excerpt': quote, 'conditions': f'원문 날짜 {label} ({page["date_precision"]}). 원문의 대상·조건·가능성 표현을 유지. 자동 발췌이며 최종 대본 검토 필요.',
+            'fact': fact, 'excerpt': quote, 'conditions': (f'발행일 미확인(확인일 {label}). ' if page.get('date_unknown') else f'원문 날짜 {label} ({page["date_precision"]}). ') + '원문의 대상·조건·가능성 표현을 유지. 자동 발췌이며 최종 대본 검토 필요.',
             'reviewed': False, 'permission': 'official' if official_url(page['url']) else 'allowed',
             'verification': 'source_matched', 'source_sha256': page['sha256'], 'date_precision': page['date_precision']})
     # The headline is added only alongside body excerpts, never as the sole evidence.
@@ -198,7 +208,7 @@ def gather(draft: dict, source: dict | None = None) -> tuple[list[dict], dict]:
                 known_urls.add(page['url'])
         except (httpx.HTTPError, OSError, ValueError, NewsError) as exc:
             errors.append(f'{url}: {str(exc)[:180]}')
-    listed = list_items(source) if source is not None and draft.get('seconds') == 60 else []
+    listed = list_items(with_date(source)) if source is not None and draft.get('seconds') == 60 else []
     if listed:
         # A listicle (가볼 만한 곳 8가지 …) becomes one scene per item, in order.
         pages = [page for page in pages if page is not source]
