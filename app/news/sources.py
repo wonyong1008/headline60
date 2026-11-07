@@ -48,7 +48,23 @@ class SourceHTML(HTMLParser):
         self.current_link = None
         self.title = ''
         self.blocks, self.paragraphs, self.content_paragraphs = [], [], []
-        self.container_lines = []
+        self.container_lines, self.ancestry, self.paragraph_ancestry = [], [], []
+
+    def densest_paragraphs(self) -> list[str]:
+        """Unknown layouts: keep only the paragraphs under the element holding most article text
+        (teasers, sidebars and comment areas each hold far less than the story itself)."""
+        totals: dict[str, int] = {}
+        for text, ancestry in zip(self.paragraphs, self.paragraph_ancestry, strict=True):
+            if len(text) < 40:
+                continue
+            for key in ancestry[2:]:  # skip html/body-level keys
+                totals[key] = totals.get(key, 0) + len(text)
+        if not totals:
+            return []
+        best = max(totals.values())
+        # Deepest element that still holds nearly all of the text.
+        chosen = max((key for key, total in totals.items() if total >= best * .6), key=lambda k: int(k.split(':', 1)[0]))
+        return [text for text, ancestry in zip(self.paragraphs, self.paragraph_ancestry, strict=True) if chosen in ancestry]
 
     def feed(self, data):
         # Newer html.parser reads <noscript> as raw text; an unclosed or tracking-pixel
@@ -67,14 +83,17 @@ class SourceHTML(HTMLParser):
             self.current_link = [attrs['href'], '']
         # Known article containers, including schema.org articleBody used by many Korean news sites.
         specific = (bool(set(attrs.get('class', '').split()) & {
-            'se-main-container', 'se_component_wrap', 'view_cont', 'article_view', 'view-cont', 'article_body', 'article-body'})
+            'se-main-container', 'se_component_wrap', 'view_cont', 'article_view', 'view-cont', 'article_body', 'article-body',
+            'news_view', 'article_txt', 'news_txt', 'art_body', 'article_content', 'news_content', 'view_text', 'article-content'})
             or attrs.get('id') in {'postViewArea', 'newsViewArea', 'articleBody', 'article_body', 'articleBodyContents', 'dic_area'}
             or attrs.get('itemprop') == 'articleBody')
         selected = 2 if specific else 1 if tag in {'article', 'main'} else 0
         if tag not in VOID:
             self.stack.append((tag, selected))
+            key = f"{tag}#{attrs.get('id', '')}.{attrs.get('class', '').strip()}" if attrs.get('id') or attrs.get('class') else tag
+            self.ancestry.append(f'{len(self.ancestry)}:{key}')
         if tag in {"p", "li", "h1", "h2", "h3"}:
-            self.blocks.append([tag, [], any(selected == 2 for _, selected in self.stack)])
+            self.blocks.append([tag, [], any(selected == 2 for _, selected in self.stack), tuple(self.ancestry)])
 
     def handle_endtag(self, tag):
         for index in range(len(self.blocks) - 1, -1, -1):
@@ -82,6 +101,7 @@ class SourceHTML(HTMLParser):
                 text = ' '.join(self.blocks[index][1])
                 if text:
                     self.paragraphs.append(text)
+                    self.paragraph_ancestry.append(self.blocks[index][3])
                     if self.blocks[index][2]:
                         self.content_paragraphs.append(text)
                 del self.blocks[index:]
@@ -92,6 +112,7 @@ class SourceHTML(HTMLParser):
         for index in range(len(self.stack) - 1, -1, -1):
             if self.stack[index][0] == tag:
                 del self.stack[index:]
+                del self.ancestry[index:]
                 break
 
     def handle_data(self, data):
@@ -102,7 +123,7 @@ class SourceHTML(HTMLParser):
         if not value:
             return
         self.all_lines.append(value)
-        for _, values, _specific in self.blocks:
+        for _, values, _specific, _ancestry in self.blocks:
             values.append(value)
         if any(selected for _, selected in self.stack):
             self.body_lines.append(value)
@@ -154,6 +175,8 @@ def source_page(url: str) -> dict:
     container = parser.content_paragraphs
     if not container or max(map(len, container)) > 600:
         container = parser.container_lines or container
+    if not container:
+        container = parser.densest_paragraphs()
     lines = list(dict.fromkeys(container or parser.paragraphs or parser.body_lines or parser.all_lines))
     if sum(len(line) for line in lines) < 100:
         raise ValueError('요약할 공개 본문을 찾지 못했습니다. 비공개·삭제·접근 제한 여부를 확인하세요.')

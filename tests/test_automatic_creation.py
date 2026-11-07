@@ -557,3 +557,13 @@ def test_naver_style_timestamps_and_undated_user_sources(monkeypatch):
     undated = {**page(), 'url': 'https://blog.example.org/undated', 'published_date': None, 'date_precision': 'unknown'}
     found, report = automatic.gather({'source_url': undated['url'], 'category': 'trending', 'topic': '주택', 'articles': [], 'evidence': [], 'seconds': 30}, undated)
     assert found and report['status'] == 'ready' and '발행일 미확인' in found[0]['conditions']
+
+
+def test_unknown_layouts_keep_only_the_densest_article_block():
+    story = ''.join(f'<p>기사 본문 {n}번째 문단은 충분히 길어서 실제 기사 내용으로 읽혀야 하는 문장입니다.</p>' for n in range(6))
+    teasers = ''.join(f'<div class="card"><p>다른 기사 티저 {n}은 길이가 사십 자를 넘더라도 본문보다 적어야 합니다.</p></div>' for n in range(3))
+    html = f'<html><body><div id="wrap"><section class="story_zone">{story}</section><aside class="side">{teasers}</aside></div></body></html>'
+    parser = SourceHTML()
+    parser.feed(html)
+    chosen = parser.densest_paragraphs()
+    assert len(chosen) == 6 and all('기사 본문' in line for line in chosen)
