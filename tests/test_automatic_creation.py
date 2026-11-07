@@ -513,9 +513,11 @@ def test_list_mode_makes_one_scene_per_item_after_the_hook(monkeypatch):
     script, _ = automatic_writer.generate_automatic({'category': 'trending', 'seconds': 60, 'evidence': evidence, 'topic': post['title']}, Settings())
     assert counts[0] == 6 and len(script.scenes) == 6 and abs(sum(s.duration_seconds for s in script.scenes) - 60) < .05
     assert script.scenes[1].headline == '1. 남산' and script.scenes[5].claim_ids == [evidence[4]['id']]
-    story['scenes'][0]['headline'] = '1. 남산'  # model put item 1 on the hook: hook gets the list title instead
+    # Model merged item 1 into the hook and dropped it: the list is re-arranged deterministically.
+    story['scenes'] = [{**story['scenes'][0], 'headline': '1. 남산'}] + story['scenes'][2:]
     script, _ = automatic_writer.generate_automatic({'category': 'trending', 'seconds': 60, 'evidence': evidence, 'topic': post['title']}, Settings())
-    assert script.scenes[0].headline == '서울 산책 코스 5가지' and script.scenes[1].headline == '1. 남산'
+    assert [s.headline for s in script.scenes] == ['서울 산책 코스 5가지', '1. 남산', '2. 한강', '3. 청계천', '4. 북촌', '5. 서울숲']
+    assert script.scenes[1].narration.startswith('남산은') and script.scenes[1].claim_ids == [evidence[0]['id']]
 
 
 def test_naver_cafe_urls_are_refused_with_a_clear_message_and_korean_charsets_decode():

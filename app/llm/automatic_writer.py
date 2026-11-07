@@ -146,6 +146,46 @@ def coerce_story(payload: str, count: int) -> Story:
     return Story(title=title if len(title) >= 2 else '오늘의 이슈', scenes=cleaned)
 
 
+def arrange_list(result: Story, evidence: list[Evidence], count: int, draft: dict) -> Story:
+    """Listicles are deterministic: scene 1 is the hook, then every numbered item in order.
+    The model's sentence for an item is kept when it clearly belongs to it; otherwise the item's
+    own first sentence is narrated, so no item is skipped or merged into the hook."""
+    items = [e for e in evidence if e.scope == 'list_item']
+    index_of = {e.id: i for i, e in enumerate(evidence)}
+    headings = [re.sub(r'^\s*\d{1,2}[.)]\s*', '', e.excerpt.split(' — ', 1)[0]).strip() for e in items]
+    by_item: dict[int, Shot] = {}
+    hook = None
+    for shot in result.scenes:
+        number = re.match(r'^\s*(\d{1,2})[.)]', shot.headline)
+        key = int(number.group(1)) - 1 if number else None
+        if key is None and 0 <= shot.source < len(evidence) and evidence[shot.source].scope == 'list_item':
+            key = [e.id for e in items].index(evidence[shot.source].id)
+        # The sentence must actually be about that item (its heading's first word appears in it).
+        about_item = (key is not None and 0 <= key < len(items)
+                      and headings[key][:2] in shot.narration)
+        if about_item and key not in by_item:
+            by_item[key] = shot
+        elif hook is None:
+            hook = shot
+    title = _clip(draft.get('topic') or result.title, 24) or result.title[:24]
+    hook_text = (hook.narration if hook else '') or _clip(draft.get('topic') or result.title, 36)
+    if len(hook_text) < 8:
+        hook_text = _clip(result.title, 36)
+    scenes = [Shot(headline=title, narration=hook_text, source=index_of[items[0].id],
+                   visual_query=(hook.visual_query if hook else '관련 장면'), visual_en=(hook.visual_en if hook else 'city street'))]
+    for i, item in enumerate(items[:count - 1]):
+        shot = by_item.get(i)
+        heading = headings[i]
+        body = item.excerpt.split(' — ', 1)[1] if ' — ' in item.excerpt else heading
+        narration = shot.narration if shot else _clip(re.split(r'(?<=[.!?])\s+', body)[0], 100)
+        if len(narration) < 8:
+            narration = _clip(body, 100) if len(body) >= 8 else f'{heading}에 대한 내용입니다.'
+        scenes.append(Shot(headline=_clip(f'{i + 1}. {heading}', 24), narration=narration, source=index_of[item.id],
+                           visual_query=shot.visual_query if shot else heading[:60],
+                           visual_en=shot.visual_en if shot else 'city street'))
+    return Story(title=result.title, scenes=scenes)
+
+
 def fallback_script(draft: dict, evidence: list[Evidence], count: int, reason: str) -> tuple[Script, dict]:
     """No usable model answer: narrate the source's own sentences so production still completes."""
     sentences = []
@@ -305,7 +345,7 @@ def _attempt(draft, config, evidence, count, schema, prompt, attempt, list_mode=
             result = Story.model_validate_json(raw['response'])
         except ValueError:
             result = coerce_story(raw['response'], count)
-        if len(result.scenes) != count:
+        if len(result.scenes) != count and not list_mode:
             raise ValueError(f'장면 수가 {count}개가 아닙니다.')
         for shot in result.scenes:
             # The model sometimes echoes its source index into the spoken text.
@@ -319,9 +359,8 @@ def _attempt(draft, config, evidence, count, schema, prompt, attempt, list_mode=
         elif len(result.scenes[0].narration) > 36 and 8 <= len(lead) <= 36:
             # Fall back to the input article's own headline clause rather than inventing a hook.
             result.scenes[0].narration = lead
-        if list_mode and re.match(r'^\s*1[.)]', result.scenes[0].headline):
-            # The hook introduces the whole list; item 1 gets its own scene right after.
-            result.scenes[0].headline = _clip(draft.get('topic') or result.title, 24) or result.title[:24]
+        if list_mode:
+            result = arrange_list(result, evidence, count, draft)
         scenes = []
         for i, shot in enumerate(result.scenes):
             if shot.source >= len(evidence):
