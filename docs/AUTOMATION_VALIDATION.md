@@ -98,3 +98,12 @@
 - **목록형(1~N):** 원문에 `1. 이름 … 2. 이름 …` 번호 항목이 4~8개면 60초 모드에서 후킹 + 항목당 한 장면(최대 9장면)으로 만든다. 네이버 카페 글은 본문이 공개 HTML이 아니라 읽을 수 없어 명확한 안내로 거절한다(내부 API 우회는 하지 않음). EUC-KR/MS949 페이지 인코딩 처리 추가.
 - **YouTube AI 라벨:** 합성 콘텐츠 자진 신고(`containsSyntheticMedia`)는 아나운서를 쓴 영상에만 켠다(실제 사람처럼 보이는 합성 인물은 YouTube 규정상 신고 필수). 사진·자막·내레이션 영상은 끈다.
 - 테스트 369개 통과, Ruff 통과. 새 아나운서 영상의 실제 립싱크 추론(약 70초)은 다음 아나운서 포함 등록에서 처음 실행된다.
+
+## 6차 — 2026-11-07 진행자 교체·의상 로테이션
+
+- 사용자가 셔츠 드레스 시안(`data/anchors/outfit-drafts/draft-20261107T091126/draft.png`, 새 얼굴)을 승인해 `data/anchors/approved-face.json`의 기준 이미지를 교체했다(이전 값은 `previous`에 보존).
+- `app/anchors/wardrobe.py`: 10벌 목록을 순서대로 돌며 영상마다 다른 의상. 각 의상은 로컬 FLUX 편집으로 한 번 생성(약 150초)해 `data/anchors/wardrobe/<look>/`에 캐시. 생성 후 `runtime/lipsync/reframe_to_reference.py`로 승인 이미지의 눈 위치·간격에 맞춰 재구도(전신 구도 → 머리~무릎)하고 `lock_reference_face.py`로 얼굴을 다시 고정. 실패 시 승인 기본 이미지로 진행(`failures.jsonl`).
+- 실제 생성 1벌: `sleeveless-wrap-dress`(검정 민소매 랩 원피스). 비교 `data/anchors/wardrobe/sleeveless-wrap-dress/compare2.jpg`. 나머지 9벌은 각 영상 제작 때 처음 생성된다(그 영상은 약 2.5분 더 걸림).
+- 수위: 어깨·팔 노출, 무릎 위 길이, 적당한 네크라인까지. 속옷·노출 수준은 넣지 않는다.
+- 목소리: 아직 미개선. 기존 음성으로 속도·억양 비교 샘플 `data/voice_samples/speed-compare-20261107/compare-A118-B118-B128-B135.wav`(현재 1.18 → 자연 억양 지시문 1.18 → 1.28 → 1.35). 현재 모델(Qwen3-TTS Sohee)에서 조절 가능한 것은 지시문과 속도뿐이며, 다른 목소리는 새 TTS 모델 설치가 필요하다.
+- 테스트 370개 통과.
