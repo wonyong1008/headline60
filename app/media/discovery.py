@@ -26,7 +26,7 @@ CATEGORY_QUERIES = {'realestate': 'apartment buildings Seoul', 'economy': 'stock
                     'politics': 'National Assembly building Seoul', 'trending': 'Seoul city street', 'tech': 'smartphone'}
 # Backgrounds must be photographs; diagrams, maps and logos read as clutter behind text.
 NOT_PHOTO = re.compile(r'chart|graph|diagram|\bmaps?\b|logo|icon|screenshot|comparison|table|\bplot|infographic|'
-                       r'\bflag|coat of arms|\bseal\b|drawing|illustration|poster|document|\bscan|cartoon|sketch', re.IGNORECASE)
+                       r'\bflag|coat of arms|\bseal\b|drawing|illustration|poster|document|\bscan|cartoon|sketch|sticker|anti-|banner', re.IGNORECASE)
 GRIM = re.compile(r'crash|accident|burn|destroy|wreck|\bdead|corpse|blood|\bwar\b|memorial|funeral|\bfire\b|protest|riot', re.IGNORECASE)
 ABSTRACT = {'price', 'prices', 'decline', 'drop', 'rise', 'fall', 'increase', 'decrease', 'market', 'markets', 'comparison',
             'competition', 'policy', 'regulation', 'growth', 'trend', 'crisis', 'pressure', 'economy', 'cost', 'costs',
@@ -102,9 +102,9 @@ def search(query: str, require_korea: bool = False) -> list[dict]:
 
 # Politics stories get institutional Korean scenes only; free-text searches return party
 # conventions, protests or unrelated "Korea" photos that misrepresent the story.
-POLITICS_SCENES = ['National Assembly building Yeouido Seoul', 'Cheong Wa Dae Blue House Seoul',
-                   'Government Complex Sejong', 'Yongsan presidential office Seoul', 'Seoul Government Complex Gwanghwamun',
-                   'National Assembly plenary chamber Seoul', 'Taegukgi flag Seoul', 'Gwanghwamun Square Seoul']
+POLITICS_SCENES = ['National Assembly building Yeouido Seoul', 'Blue House Seoul', 'Gwanghwamun Square Seoul',
+                   'Government Complex Sejong', 'National Assembly Seoul', 'Seoul City Hall', 'Yeouido Seoul skyline',
+                   'Gyeongbokgung Seoul']
 
 
 def query_variants(scene, category: str, index: int = 0) -> list[str]:
