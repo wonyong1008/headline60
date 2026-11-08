@@ -680,3 +680,26 @@ def test_every_automatic_script_ends_with_a_subscribe_cta_and_keeps_total_second
     assert abs(sum(s.duration_seconds for s in script.scenes) - 30) < .05 and script.scenes[0].duration_seconds == 3
     fallback, _ = automatic_writer.fallback_script({'seconds': 60, 'topic': '주택 공급 계획'}, [Evidence.model_validate(source)], 8, 'test')
     assert fallback.scenes[-1].scene_id == 'scene-cta' and abs(sum(s.duration_seconds for s in fallback.scenes) - 60) < .05
+
+
+def test_retired_pinned_photo_is_replaced_instead_of_blocking_an_automatic_render(tmp_path, monkeypatch):
+    from app.jobs.manager import Manager
+    from app.media import discovery
+    config = Settings(root=tmp_path)
+    service = Manager(config)
+    service.pool.shutdown(wait=True)
+    picked = []
+    def fake_media(cfg, script, category):
+        for scene in script.scenes:
+            scene.asset_id = scene.asset_id or 'fresh-photo'
+            picked.append(scene.asset_id)
+        return {'imported': [], 'queries': [], 'errors': []}
+    monkeypatch.setattr(discovery, 'ensure_media', fake_media)
+    monkeypatch.setattr('app.media.library.resolve_asset', lambda cfg, key, kind=None: (_ for _ in ()).throw(ValueError('retired')) if key == 'gone' else {'media_type': 'image'})
+    draft = {'automatic': True, 'category': 'trending', 'script': {'title': '제목', 'description': '설명입니다.', 'hashtags': [], 'scenes': [
+        {'headline': '첫 장면', 'narration': '첫 장면 내레이션이에요.', 'asset_id': 'gone', 'duration_seconds': 3},
+        {'headline': '둘째', 'narration': '둘째 장면 내레이션이에요.', 'asset_id': None, 'duration_seconds': 3},
+        {'headline': '셋째', 'narration': '셋째 장면 내레이션이에요.', 'asset_id': None, 'duration_seconds': 3},
+        {'headline': '넷째', 'narration': '넷째 장면 내레이션이에요.', 'asset_id': None, 'duration_seconds': 3}]}}
+    service._validate_media(draft)
+    assert draft['script']['scenes'][0]['asset_id'] == 'fresh-photo' and 'gone' not in picked

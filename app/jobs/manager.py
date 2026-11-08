@@ -156,7 +156,25 @@ class Manager:
 
     def _validate_media(self, draft: dict) -> None:
         from app.media.library import resolve_asset
-        for scene in (draft.get("script") or {}).get("scenes", []):
+        scenes = (draft.get("script") or {}).get("scenes", [])
+        if draft.get("automatic"):
+            # A photo retired from the library after it was pinned must not stop production:
+            # drop it and let discovery find another one for that scene.
+            dropped = False
+            for scene in scenes:
+                if scene.get("asset_id"):
+                    try:
+                        resolve_asset(self.config, scene["asset_id"])
+                    except ValueError:
+                        scene["asset_id"] = None
+                        dropped = True
+            if dropped:
+                from app.media.discovery import ensure_media
+                script = Script.model_validate(draft["script"])
+                draft["media_search"] = ensure_media(self.config, script, draft["category"])
+                draft["script"] = script.model_dump()
+                scenes = draft["script"]["scenes"]
+        for scene in scenes:
             if scene.get("asset_id"):
                 asset = resolve_asset(self.config, scene["asset_id"])
                 if asset["media_type"] not in {"image", "video"}:
