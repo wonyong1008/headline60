@@ -199,11 +199,14 @@ def source_page(url: str) -> dict:
         raise ValueError('요약할 공개 본문을 찾지 못했습니다. 비공개·삭제·접근 제한 여부를 확인하세요.')
     # Blog editors break one sentence over several short paragraphs; stitch them back together.
     lines = merge_fragments(lines)
-    link_text = sum(len(' '.join(label.split())) for _href, label in parser.links)
-    body_text = sum(len(line) for line in lines)
-    if link_text > body_text * .6:
-        # Headline lists / index pages: almost everything on the page is a link label.
-        raise ValueError('기사 본문이 아니라 목록·메뉴 페이지로 보입니다. 기사 한 건의 주소를 등록하세요.')
+    if not container:
+        # No article block at all: decide between a story and an index page by how much of the
+        # page's text is link labels. A found article block (news sites carry huge menus and
+        # related-story link lists around it) is never judged this way.
+        link_text = sum(len(' '.join(label.split())) for _href, label in parser.links)
+        page_text = sum(len(line) for line in parser.all_lines)
+        if link_text > page_text * .6:
+            raise ValueError('기사 본문이 아니라 목록·메뉴 페이지로 보입니다. 기사 한 건의 주소를 등록하세요.')
     title = parser.meta.get('og:title') or parser.title
     published, precision = publication_date(parser)
     return {'url': original, 'resolved_url': final, 'title': title[:300], 'lines': lines,

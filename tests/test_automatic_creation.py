@@ -650,3 +650,13 @@ def test_abstract_topics_get_symbolic_photo_queries_from_their_words():
     variants = discovery.query_variants(scene, 'trending')
     assert variants[0] in {'dark storm clouds', 'snake grass'} and 'Seoul city street' in variants
     assert discovery.theme_queries('별다른 상징이 없는 문장') == []
+
+
+def test_news_article_with_large_link_menus_is_still_an_article(monkeypatch):
+    from app.news import sources
+    menu = '<nav>' + ''.join(f'<a href="/s/{n}">관련 기사와 메뉴 링크 제목 {n}번입니다</a>' for n in range(60)) + '</nav>'
+    body = '<article itemprop="articleBody">' + ''.join(f'<p>기사 본문 {n}번째 문단은 링크보다 짧아도 실제 기사 내용이라 반드시 읽혀야 합니다.</p>' for n in range(5)) + '</article>'
+    html = f'<html><body>{menu}{body}{menu}</body></html>'
+    monkeypatch.setattr(sources, 'fetch_public', lambda url, **k: (url, html.encode(), 'text/html; charset=utf-8'))
+    page = sources.source_page('https://news.example.org/view/1')
+    assert len(page['lines']) == 5 and page['lines'][0].startswith('기사 본문 0번째')
