@@ -52,7 +52,7 @@ async function createContent(event) {
 function jobVoiceLabel(profileId) {
   const profile=voiceProfiles.find(p=>p.voice_profile_id===profileId);
   if(profile)return profile.name;
-  return ({'macos-yuna-news':'macOS Yuna · 기본 뉴스','female-news':'성숙한 Sohee · 뉴스','calm-economy':'Sohee · 차분한 경제 뉴스','bright-lifestyle':'Sohee · 밝은 생활 뉴스','energetic-trending':'Sohee · 활기 있는 이슈 뉴스'})[profileId]||profileId||'기존 macOS 음성';
+  return ({'reels-male-ryan':'남성 내레이터 Ryan'})[profileId]||profileId||'기존 음성';
 }
 function jobHTML(job) {
   const d=job.details||{}, isNews=Boolean(d.draft_id), done=job.status==='completed';
@@ -303,7 +303,6 @@ function showDraft(draft) {
   const quality=draftQualitySettings(draft);$('edit-style').value=quality.edit_style;$('narration-speed').value=Number(quality.narration_speed).toFixed(2);
   $('template').value=draft.template||'headline_news';$('subtitle-style').value=draft.subtitle_style||'clean';
   $('music-asset').innerHTML=mediaOptions(draft.music_asset_id,'audio');updateTemplateGuide();
-  setAnchorSelection($('studio-anchor'),draft.anchor_id||'');
   setDraftVoice(draft);
   $('evidence-list').innerHTML=draft.evidence.map(evidenceHTML).join('');
   $('script-editor').hidden=!draft.script;
@@ -319,12 +318,11 @@ function showDraft(draft) {
 async function saveDraft() {
   if(!currentDraft) throw new Error('먼저 이슈를 선택하세요.');
   if($('tts-engine').value==='qwen3_mlx'&&!selectedVoiceProfile()?.available)throw new Error('사용 가능한 MLX 프로필이 없습니다. 자동으로 다른 음성으로 바꾸지 않습니다. macOS를 직접 선택하거나 모델 설정을 확인하세요.');
-  const body={...qualityFromForm(),content_mode:draftMode(currentDraft),topic:currentDraft.topic||'',fiction_acknowledged:Boolean(currentDraft.fiction_acknowledged),revision:currentDraft.revision,script:scriptFromForm(),evidence:evidenceFromForm(),seconds:Number($('seconds').value),resolution:Number($('resolution').value),voice:$('voice').value,voice_profile_id:$('voice-profile').value||null,template:$('template').value,subtitle_style:$('subtitle-style').value,music_asset_id:$('music-asset').value||null,anchor_id:$('studio-anchor')?.value||null};
+  const body={...qualityFromForm(),content_mode:draftMode(currentDraft),topic:currentDraft.topic||'',fiction_acknowledged:Boolean(currentDraft.fiction_acknowledged),revision:currentDraft.revision,script:scriptFromForm(),evidence:evidenceFromForm(),seconds:Number($('seconds').value),resolution:Number($('resolution').value),voice:$('voice').value,voice_profile_id:$('voice-profile').value||null,template:$('template').value,subtitle_style:$('subtitle-style').value,music_asset_id:$('music-asset').value||null};
   const draft=await api(`/api/drafts/${currentDraft.id}`,'PUT',body);showDraft(draft);return draft;
 }
 async function studio() {
   const [drafts,config,profiles]=await Promise.all([api('/api/drafts'),api('/api/settings'),api('/api/voice-profiles')]);
-  await loadAnchorPickers();
   updateNewContentMode();
   $('new-content-mode').addEventListener('change',()=>{const mode=$('new-content-mode').value;$('new-content-category').value=mode==='myth_check'?'health':mode==='adult_satire'?'trending':'economy';updateNewContentMode();});
   $('new-content').addEventListener('submit',async e=>{const button=$('create-content');button.disabled=true;try{await createContent(e);}catch(error){notice(error.message,true);}finally{button.disabled=false;}});
@@ -365,10 +363,6 @@ async function studio() {
 function experimentNumber(value, unit='', digits=2) {
   return typeof value==='number'&&Number.isFinite(value)?value.toLocaleString('ko-KR',{maximumFractionDigits:digits})+unit:'미측정';
 }
-async function anchorExperimentsPage() {
-  const results=await api('/api/anchor-experiments');
-  $('anchor-experiments').innerHTML=results.length?results.map(item=>`<section class="panel anchor-experiment"><div class="heading"><div><p class="eyebrow">LIP-SYNC BENCHMARK</p><h2>${experimentNumber(item.seconds,'초',0)} 입 모양 합성 실험</h2></div><span class="badge ${item.status==='completed'?'ok':''}">${item.status==='completed'?'기술 실험 완료':esc(labels[item.status]||'상태 확인 필요')}</span></div><div class="anchor-experiment-body">${item.video_url?`<video class="anchor-experiment-video" aria-label="${experimentNumber(item.seconds,'초',0)} 입 모양 실험 미리보기" controls preload="metadata" width="${item.width||512}" height="${item.height||512}" src="${esc(item.video_url)}"></video>`:'<p class="muted">아직 재생할 수 있는 결과 영상이 없습니다.</p>'}<div class="anchor-experiment-info"><p><span class="badge">임시 가상 얼굴</span><span class="badge">${item.static_portrait_mouth_only?'정지 영상 · 입 주변 합성':'실험 영상'}</span><span class="badge">진행자 조합 미검증</span></p><dl class="experiment-metrics"><div><dt>출력 규격</dt><dd>${experimentNumber(item.width,'',0)} × ${experimentNumber(item.height,'',0)} · ${experimentNumber(item.fps,'fps',0)}</dd></div><div><dt>총 처리 시간</dt><dd>${experimentNumber(item.total_seconds,'초')}</dd></div><div><dt>모델 로딩</dt><dd>${experimentNumber(item.model_load_seconds,'초')}</dd></div><div><dt>입 모양 추론</dt><dd>${experimentNumber(item.inference_seconds,'초')}</dd></div><div><dt>프로세스 RSS 피크</dt><dd>${experimentNumber(item.peak_rss_bytes===null?null:item.peak_rss_bytes/1073741824,' GiB')}</dd></div><div><dt>MPS 드라이버 관측 최대</dt><dd>${experimentNumber(item.mps_observed_driver_bytes===null?null:item.mps_observed_driver_bytes/1073741824,' GiB')}</dd></div></dl><p class="muted">메모리는 서로 다른 관측 지표입니다. 합산해 시스템 전체 통합 메모리 사용량으로 해석하지 않습니다.</p><p class="muted">${item.body_motion_generated?'원본 영상 움직임을 포함하는 실험입니다. 별도 몸짓 생성 검증과 구분해야 합니다.':'몸짓 생성 미구현 · 방송 품질과 자연스러움은 직접 재생해 확인해야 합니다.'}</p>${item.video_url?`<a class="text-link" href="${esc(item.video_url)}" download>실험 영상 저장 ↓</a>`:''}</div></div><p class="muted">실험 ID ${esc(item.id)}</p></section>`).join(''):'<section class="panel"><h2>아직 저장된 실험 결과가 없습니다.</h2><p>실험이 완료되면 영상과 실제 측정값을 여기서 확인할 수 있습니다.</p></section>';
-}
 async function settingsPage() {
   const data=await api('/api/diagnostics');$('summary').textContent=`${data.ready?'제작 준비 완료':'확인이 필요한 항목이 있습니다'} · Python ${data.python} · 여유 ${data.free_disk_gib}GiB`;
   $('checks').innerHTML=Object.entries(data.checks).map(([name,c])=>`<div class="check"><strong class="${c.ok?'ok':'fail'}">${c.ok?'✓':'!'} ${esc(name)}</strong><small>${esc(c.error||c.version||c.selected||c.url||c.path||c.fix)}</small></div>`).join('');
@@ -387,28 +381,11 @@ document.addEventListener('click',async e=>{
     if(move){const row=move.closest('.scene'),other=move.classList.contains('move-up')?row.previousElementSibling:row.nextElementSibling;if(other){const a=row.querySelector('[data-scene="duration_seconds"]'),b=other.querySelector('[data-scene="duration_seconds"]');[a.value,b.value]=[b.value,a.value];if(move.classList.contains('move-up'))other.before(row);else other.after(row);document.querySelectorAll('.scene-number').forEach((n,i)=>{n.textContent=i+1;const label=n.closest('.scene').querySelector('.scene-headline-label');if(label)label.textContent=i===0?'첫 화면 큰 후킹 문구':'화면 헤드라인';});$('script-hook').value=$('scene-list').firstElementChild.querySelector('[data-scene="narration"]').value;markDirty();}}
   }catch(error){notice(error.message,true);}
 });
-let anchorProfiles = [], submissions = [], submissionSignature = '', submissionRefreshing = false;
+let submissions = [], submissionSignature = '', submissionRefreshing = false;
 const submissionLabels = {queued:'대기 중',preparing:'대본·자료 준비 중',rendering:'영상 제작 중',uploading:'YouTube 업로드 중',completed:'완료',needs_auth:'YouTube 연결 필요',needs_review:'내용 확인 필요',upload_wait:'업로드 대기(한도)',failed:'실패',cancelled:'취소됨'};
 const submissionStages = {source_and_script:'원문·대본 준비',render_validation:'대본·제작 설정 확인',youtube_upload:'YouTube 업로드',queued:'등록 대기',source:'원문 읽기',research:'자료 확인',researching:'자료 확인',prepare:'대본·자료 준비',preparing:'대본·자료 준비',script:'대본 생성',generating:'대본 생성',tts:'음성·자막 제작',cards:'장면 준비',render:'영상 합성',rendering:'영상 제작',verify:'영상 검사',upload:'YouTube 업로드',uploading:'YouTube 업로드',completed:'업로드 완료',needs_auth:'YouTube 연결 필요',needs_review:'내용 확인 필요',failed:'실패',cancelled:'취소됨'};
 function safeWebURL(value) {
   try { const url=new URL(value); return ['http:','https:'].includes(url.protocol)?url.href:''; } catch { return ''; }
-}
-function setAnchorSelection(select, value='') {
-  if(!select)return;
-  select.innerHTML='<option value="">미포함</option>'+anchorProfiles.map(profile=>`<option value="${esc(profile.anchor_id)}" ${profile.available?'':'disabled'}>포함 · 실험${profile.available?'':' · 현재 사용 불가'}</option>`).join('');
-  if(value&&!anchorProfiles.some(profile=>profile.anchor_id===value))select.insertAdjacentHTML('beforeend',`<option value="${esc(value)}" disabled>저장된 아나운서 · 현재 사용 불가</option>`);
-  select.value=value;
-}
-async function loadAnchorPickers() {
-  try {
-    const result=await api('/api/anchor-profiles');
-    anchorProfiles=(Array.isArray(result)?result:result.profiles||[]).filter(profile=>profile.anchor_id==='headline60-brown-adult-01').slice(0,1);
-    document.querySelectorAll('[data-anchor-picker]').forEach(select=>setAnchorSelection(select,select.value));
-  } catch {
-    document.querySelectorAll('[data-anchor-picker]').forEach(select=>{
-      if(!select.value)select.innerHTML='<option value="">미포함</option><option disabled>포함 · 실험 · 상태 확인 필요</option>';
-    });
-  }
 }
 function submissionRow(row, position) {
   const url=safeWebURL(row.url),youtube=safeWebURL(row.youtube_url);
@@ -416,7 +393,7 @@ function submissionRow(row, position) {
   const status=submissionLabels[row.status]||row.status;
   const stage=submissionStages[row.stage]||row.stage||'';
   const retry=['failed','needs_auth','needs_review','cancelled','upload_wait'].includes(row.status);
-  return `<tr data-submission="${esc(row.id)}"><td class="submission-order">${row.status==='queued'?`<strong>${position}</strong>`:['preparing','rendering','uploading'].includes(row.status)?'<span class="submission-active">진행 중</span>':'—'}<small>등록 #${esc(row.sequence)}</small></td><td class="submission-title"><strong>${esc(row.title||'제목 확인 중')}</strong>${url?`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`:''}<small>${row.anchor_id?'아나운서 포함 · 실험':'아나운서 미포함'} · ${row.voice_profile_id==='reels-male-ryan'?'남성 목소리':'여성 목소리'} · ${esc(formatDate(row.created_at))}</small></td><td><span class="badge ${row.status==='completed'?'ok':''} ${row.status==='failed'?'submission-failed':''}">${esc(status)}</span>${stage&&stage!==status?`<small>${esc(stage)}</small>`:''}${row.error?`<details class="submission-error"><summary>상세 내용</summary><p>${esc(row.error)}</p></details>`:''}${row.status==='needs_auth'?'<a href="/settings">YouTube 연결 →</a>':''}${row.status==='needs_review'&&row.draft_id?`<a href="/studio?draft=${encodeURIComponent(row.draft_id)}">대본 확인 →</a>`:''}</td><td>${canPreview?`<button type="button" class="secondary" data-submission-preview="${esc(row.id)}">미리보기</button>`:'<span class="muted">준비 중</span>'}</td><td>${youtube?`<a href="${esc(youtube)}" target="_blank" rel="noopener noreferrer">영상 열기 ↗</a><small>${esc({public:'공개',unlisted:'일부 공개',private:'비공개'}[row.youtube_privacy]||'')}</small>`:'—'}</td><td>${retry?`<button type="button" class="secondary" data-submission-retry="${esc(row.id)}">다시 시도</button> `:''}${['completed','failed','needs_review','cancelled','upload_wait'].includes(row.status)?`<button type="button" class="secondary" data-submission-rebuild="${esc(row.id)}">다시 만들기</button>`:(retry?'':'—')}</td></tr>`;
+  return `<tr data-submission="${esc(row.id)}"><td class="submission-order">${row.status==='queued'?`<strong>${position}</strong>`:['preparing','rendering','uploading'].includes(row.status)?'<span class="submission-active">진행 중</span>':'—'}<small>등록 #${esc(row.sequence)}</small></td><td class="submission-title"><strong>${esc(row.title||'제목 확인 중')}</strong>${url?`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`:''}<small>${esc(formatDate(row.created_at))}</small></td><td><span class="badge ${row.status==='completed'?'ok':''} ${row.status==='failed'?'submission-failed':''}">${esc(status)}</span>${stage&&stage!==status?`<small>${esc(stage)}</small>`:''}${row.error?`<details class="submission-error"><summary>상세 내용</summary><p>${esc(row.error)}</p></details>`:''}${row.status==='needs_auth'?'<a href="/settings">YouTube 연결 →</a>':''}${row.status==='needs_review'&&row.draft_id?`<a href="/studio?draft=${encodeURIComponent(row.draft_id)}">대본 확인 →</a>`:''}</td><td>${canPreview?`<button type="button" class="secondary" data-submission-preview="${esc(row.id)}">미리보기</button>`:'<span class="muted">준비 중</span>'}</td><td>${youtube?`<a href="${esc(youtube)}" target="_blank" rel="noopener noreferrer">영상 열기 ↗</a><small>${esc({public:'공개',unlisted:'일부 공개',private:'비공개'}[row.youtube_privacy]||'')}</small>`:'—'}</td><td>${retry?`<button type="button" class="secondary" data-submission-retry="${esc(row.id)}">다시 시도</button> `:''}${['completed','failed','needs_review','cancelled','upload_wait'].includes(row.status)?`<button type="button" class="secondary" data-submission-rebuild="${esc(row.id)}">다시 만들기</button>`:(retry?'':'—')}</td></tr>`;
 }
 async function refreshSubmissions() {
   if(submissionRefreshing)return;
@@ -460,7 +437,7 @@ async function submissionPage() {
     event.preventDefault();const button=$('submission-register');if(button.disabled)return;
     const input=$('submission-url'),url=input.value.trim();button.disabled=true;button.textContent='등록 중…';
     try {
-      const row=await api('/api/submissions','POST',{url,anchor_id:$('submission-anchor').value||null,voice_profile_id:$('submission-voice')?.value||null});
+      const row=await api('/api/submissions','POST',{url,voice_profile_id:$('submission-voice')?.value||null});
       if(input.value.trim()===url)input.value='';
       input.focus();notice(`등록했습니다${row.sequence?' · 등록 #'+row.sequence:''}. 다음 URL을 계속 입력하세요.`);
       await refreshSubmissions();
@@ -489,7 +466,7 @@ async function submissionPage() {
   });
   $('submission-preview-close').addEventListener('click',()=>$('submission-preview').close());
   $('submission-preview').addEventListener('close',()=>{$('submission-preview-video').pause();$('submission-preview-video').removeAttribute('src');$('submission-preview-video').load();});
-  await Promise.allSettled([loadAnchorPickers(),refreshSubmissions(),refreshYouTubeStatus()]);
+  await Promise.allSettled([,refreshSubmissions(),refreshYouTubeStatus()]);
   setInterval(refreshSubmissions,2500);
   setInterval(refreshYouTubeStatus,10000);
 }
@@ -522,16 +499,14 @@ function quickStart() {
   quickStart();
   if(page==='/')await submissionPage();
   if(page==='/news'){
-    await loadAnchorPickers();
     newsGroups=(await api('/api/news')).groups;renderNews();
     $('news-search').addEventListener('submit',async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;notice('Google News RSS에서 후보를 수집하고 있습니다…');try{const result=await api('/api/news/collect','POST',{category:$('category').value,keyword:$('keyword').value,days:Number($('days').value)});newsGroups=result.groups;selected.clear();renderNews();notice(`${result.collected}건 수집 · ${result.groups.length}개 묶음. ${result.notice}`);}catch(error){notice(error.message,true);}finally{button.disabled=false;}});
     $('news-results').addEventListener('change',e=>{if(e.target.dataset.article){if(e.target.checked)selected.add(e.target.dataset.article);else selected.delete(e.target.dataset.article);$('selected-count').textContent=`선택한 기사 ${selected.size}건`;$('create-draft').disabled=!selected.size;}});
-    on('create-draft',async()=>{await api('/api/submissions/selected','POST',{article_ids:[...selected],category:$('category').value,anchor_id:$('news-anchor').value||null});selected.clear();renderNews();notice('선택한 기사를 등록했습니다. 홈의 등록 목록에서 진행 상황을 확인할 수 있습니다.');});
+    on('create-draft',async()=>{await api('/api/submissions/selected','POST',{article_ids:[...selected],category:$('category').value});selected.clear();renderNews();notice('선택한 기사를 등록했습니다. 홈의 등록 목록에서 진행 상황을 확인할 수 있습니다.');});
     $('manual-news').addEventListener('submit',async e=>{e.preventDefault();try{await api('/api/news/manual','POST',{url:$('manual-url').value,title:$('manual-title').value,publisher:$('manual-publisher').value,published_date:$('manual-date').value||null,category:$('category').value});newsGroups=(await api('/api/news')).groups;renderNews();notice('직접 입력한 URL을 후보로 저장했습니다. 원문 검증은 별도입니다.');}catch(error){notice(error.message,true);}});
   }
   if(page==='/news'){const q=new URLSearchParams(location.search).get('keyword');if(q){$('keyword').value=q;$('news-search').requestSubmit();}}
   if(page==='/studio')await studio();
   if(page==='/history'){await refreshJobs();setInterval(()=>refreshJobs().catch(e=>notice(e.message,true)),2000);}
-  if(page==='/anchors'){await anchorExperimentsPage();on('refresh-anchor-experiments',anchorExperimentsPage);}
   if(page==='/settings'){youtubeSettings();await settingsPage();on('refresh',settingsPage);}
 })().catch(error=>notice(error.message,true));

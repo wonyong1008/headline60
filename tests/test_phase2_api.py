@@ -63,7 +63,7 @@ def completed_fixture(config):
                         excerpt='원문 자료에서 발표한 내용과 조건을 함께 확인합니다.',
                         conditions='실제 성과로 단정하지 않습니다.', reviewed=True)
     draft = studio_store.create(config, {'articles': [], 'category': 'tech', 'seconds': 30,
-        'resolution': 720, 'voice': 'Yuna', 'voice_profile_id': 'female-news', 'style': '뉴스 해설',
+        'resolution': 720, 'voice': 'Yuna', 'voice_profile_id': 'reels-male-ryan', 'style': '뉴스 해설',
         'script': script.model_dump(), 'evidence': [evidence.model_dump(mode='json')]})
     draft.update(status='completed', approved_revision=1)
     studio_store.save(config, draft, 1)
@@ -93,10 +93,10 @@ def test_unavailable_neural_profile_does_not_fall_back(local_app):
     async def check():
         async with client() as session:
             listed = (await session.get('/api/voice-profiles')).json()
-            assert next(p for p in listed if p['voice_profile_id'] == 'macos-yuna-news')['available']
-            assert not next(p for p in listed if p['voice_profile_id'] == 'female-news')['available']
+            assert [p['voice_profile_id'] for p in listed] == ['reels-male-ryan']  # the only voice offered
+            assert not listed[0]['available']  # no MLX runtime under the temporary root
             response = await session.post('/api/voice-samples', headers=headers(), json={
-                'voice_profile_id': 'female-news', 'text': '정확하고 차분하게 뉴스를 전해 드립니다.'})
+                'voice_profile_id': 'reels-male-ryan', 'text': '정확하고 차분하게 뉴스를 전해 드립니다.'})
             assert response.status_code == 400
             assert '직접 선택' in response.json()['detail']
             assert not service.pool.submitted
@@ -105,7 +105,7 @@ def test_unavailable_neural_profile_does_not_fall_back(local_app):
 
 def test_failed_neural_sample_keeps_selected_voice(local_app, monkeypatch):
     config, service = local_app
-    selected = profiles.get(config, 'female-news', require_available=False)
+    selected = profiles.get(config, 'reels-male-ryan', require_available=False)
     monkeypatch.setattr(profiles, 'get', lambda *args, **kwargs: selected)
     calls = []
 
@@ -118,7 +118,7 @@ def test_failed_neural_sample_keeps_selected_voice(local_app, monkeypatch):
     async def check():
         async with client() as session:
             response = await session.post('/api/voice-samples', headers=headers(), json={
-                'voice_profile_id': 'female-news', 'text': '정확하고 차분하게 뉴스를 전해 드립니다.'})
+                'voice_profile_id': 'reels-male-ryan', 'text': '정확하고 차분하게 뉴스를 전해 드립니다.'})
             assert response.status_code == 200
             key = response.json()['id']
             assert len(service.pool.submitted) == 1
@@ -127,7 +127,7 @@ def test_failed_neural_sample_keeps_selected_voice(local_app, monkeypatch):
             record = (await session.get(f'/api/voice-samples/{key}')).json()
             assert record['status'] == 'failed'
             assert record['profile']['engine'] == 'qwen3_mlx'
-            assert record['profile']['speaker'] == 'Sohee'
+            assert record['profile']['speaker'] == 'ryan'
             assert calls == ['qwen3_mlx']
             assert key not in service.events
             assert (await session.get(f'/api/voice-samples/{key}/audio')).status_code == 404

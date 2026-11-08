@@ -87,7 +87,6 @@ class VideoRequest(BaseModel):
     narration_speed: float = Field(default=1.0, ge=1, le=1.35)
     subtitle_style: Literal["clean", "boxed", "dynamic"] = "clean"
     music_asset_id: str | None = Field(default=None, max_length=60)
-    anchor_id: Literal["headline60-brown-adult-01"] | None = None
     topic: str = Field(min_length=2, max_length=200)
     seconds: Literal[30, 60] = 30
     category: str = Field(default="경제", min_length=1, max_length=30)

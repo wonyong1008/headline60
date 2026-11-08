@@ -236,8 +236,7 @@ class Manager:
                                    edit_style=draft.get("edit_style", "classic"),
                                    text_style=draft.get("text_style", "classic"),
                                    narration_speed=draft.get("narration_speed", 1.0),
-                                   content_mode=draft.get("content_mode", "news"),
-                                   anchor_id=draft.get("anchor_id"))
+                                   content_mode=draft.get("content_mode", "news"))
             context = draft
             if private_preview:
                 context = {**draft, "preview_only": True, "automation_private_preview": True,

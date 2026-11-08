@@ -43,7 +43,6 @@ class ReelOptions(StrictModel):
     narration_speed: float = Field(default=1.28, ge=1, le=1.35)  # user choice 2026-11-07
     subtitle_style: Literal["clean", "boxed", "dynamic"] = "clean"
     music_asset_id: str | None = Field(default=None, max_length=60)
-    anchor_id: Literal["headline60-brown-adult-01"] | None = None
 
 
 class DraftCreate(ReelOptions):

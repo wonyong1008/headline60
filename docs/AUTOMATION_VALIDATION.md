@@ -145,3 +145,8 @@
 - 프롬프트의 후킹 예시("이거 진짜예요?" 등)를 모델이 그대로 사용 → 예시 제거, 자료의 구체 사실을 넣은 한 문장으로 지시. 장면 문장이 20자 명사형으로 나온 건은 거절·재작성(장면별 32자 이상·종결어미 검사). key_phrase를 스키마 필수로.
 - 보관함 정리로 제외한 사진이 고정된 장면 때문에 30번이 "사용 권리 확인 필요"로 멈춤 → 자동 제작은 제외 사진을 버리고 그 장면만 재검색하도록 수정(테스트 추가).
 - 29 `HB0Y8nWZYx0`(42.6초), 30 `1i18x5LuK6k`(46.8초) 공개 업로드. CTA 장면 포함. 테스트 387개 통과.
+
+## 12차 — 2026-11-08 아나운서·여성 목소리 제거
+- 사용자 결정에 따라 AI 진행자 기능과 제작 자산을 모두 삭제: `runtime/lipsync`(5.3GB), `runtime/imagegen`(1.1GB), `data/models/flux2-klein-4b`(15GB), `data/anchors`, `data/cache/presenter`, 립싱크 벤치마크·샘플, 작업 폴더의 anchor-attempt·presenter.mp4. `app/anchors`, `/api/anchor-*`, `/anchors` 페이지, 아나운서 선택 UI, 렌더러의 presenter 합성 코드, 관련 테스트 삭제. 디스크 여유 42GB→61GB.
+- 목소리: Sohee 프리셋 5종·macOS Yuna 프리셋·승인 파일·여성 샘플 삭제. `reels-male-ryan`만 제공, 기본·유일 선택.
+- 테스트 297개 통과, Ruff 통과. 서버 재시작 후 목소리 목록은 Ryan 1개(available=True).

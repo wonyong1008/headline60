@@ -28,16 +28,8 @@ class VoiceProfile(BaseModel):
 
 
 def seed(config: Settings) -> None:
-    presets = [VoiceProfile(voice_profile_id="macos-yuna-news", name="macOS Yuna · 기본 뉴스",
-        engine="macos", model="macOS say", speaker="Yuna", validated=True)]
-    for key, name, style in [
-        ("female-news", "Female News Anchor · Mature Sohee", "Speak as a mature adult female Korean news anchor. Use a composed, warm, authoritative tone in a slightly lower natural register. Use a measured cadence and stable sentence endings. Avoid youthful brightness, cuteness, breathiness, and exaggerated emotion."),
-        ("calm-economy", "Calm Economic News · Sohee", "Read in Korean with a calm measured economic news delivery. Use clear diction and steady sentence endings."),
-        ("bright-lifestyle", "Bright Lifestyle News · Sohee", "Read in Korean with a warm bright and clear lifestyle news delivery, without exaggeration."),
-        ("energetic-trending", "Energetic Trending News · Sohee", "Read in Korean with a lively but controlled news delivery. Keep clear articulation and natural breathing."),
-    ]:
-        presets.append(VoiceProfile(voice_profile_id=key, name=name, engine="qwen3_mlx",
-                                   model=MODEL, speaker="Sohee", style_prompt=style, speed=.96 if key == "female-news" else 1))
+    """Only the male narrator is offered (user decision 2026-11-08); female presets were removed."""
+    presets = []
     presets.append(VoiceProfile(
         voice_profile_id="reels-male-ryan", name="릴스 · 남성 내레이터 Ryan", engine="qwen3_mlx", model=MODEL, speaker="ryan",
         style_prompt=("A charismatic Korean male narrator with crisp, clear diction and a confident, stylish delivery. "
@@ -47,25 +39,18 @@ def seed(config: Settings) -> None:
         generation_parameters={"seed": 42, "temperature": 0.65, "top_p": 0.9, "top_k": 50},
         phrasing="continuous", validated=True,
         note="2026-11-07 남성 화자 비교(ryan·aiden·uncle_fu) 후 등록. data/voice_samples/male-compare-20261107."))
-    approved = config.data / "reels-voice.json"
-    if approved.is_file():
-        record = json.loads(approved.read_text())
-        if record.get("status") == "user_approved_sample":
-            value = {**record["profile"], "phrasing": "continuous"}
-            presets.append(VoiceProfile.model_validate(value))
     with connect(config) as db:
         db.execute("CREATE TABLE IF NOT EXISTS voice_profiles (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
         db.execute("CREATE TABLE IF NOT EXISTS voice_samples (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
         for profile in presets:
             db.execute("INSERT OR IGNORE INTO voice_profiles VALUES (?, ?)",
                        (profile.voice_profile_id, profile.model_dump_json()))
-        if True:
-            # Code-defined reels profiles follow their current definition (style prompt edits apply).
-            for profile in presets:
-                if profile.voice_profile_id in {"reels-natural-sohee", "reels-male-ryan"} and (
-                        profile.voice_profile_id != "reels-natural-sohee" or approved.is_file()):
-                    db.execute("UPDATE voice_profiles SET payload=? WHERE id=?",
-                               (profile.model_dump_json(), profile.voice_profile_id))
+        # Code-defined profiles follow their current definition (style prompt edits apply); removed
+        # presets (female voices, macOS Yuna) disappear from existing databases too.
+        for profile in presets:
+            db.execute("UPDATE voice_profiles SET payload=? WHERE id=?", (profile.model_dump_json(), profile.voice_profile_id))
+        keep = [profile.voice_profile_id for profile in presets]
+        db.execute(f"DELETE FROM voice_profiles WHERE id NOT IN ({','.join('?' * len(keep))})", keep)
 
 
 def listing(config: Settings) -> list[dict]:

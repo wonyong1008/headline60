@@ -28,7 +28,7 @@ NAVY, CORAL, PAPER, MUTED = '#101B2D', '#F25B52', '#F5F6F8', '#8B98AA'
 YELLOW = '#FFE14D'  # 'punch' highlight boxes behind key words
 TEMPLATES = {'headline_news', 'story_explainer', 'data_comparison'}
 ANIMATIONS = {'fade', 'slide_up', 'slide_down', 'scale', 'pop', 'words', 'number'}
-VERSION = 'news-reel-v3.6.0-punch'
+VERSION = 'news-reel-v3.7.0-no-presenter'
 CONTENT_LABELS = {'adult_satire': '허구 · 성인 공감 풍자', 'myth_check': '속설 검증 · 근거 확인'}
 
 
@@ -281,17 +281,12 @@ def chart_panel(chart, width, config, translucent=False):
     return image
 
 
-# Cut-out presenter: scaled and shifted right so the headline keeps the top-left of the photo.
-PRESENTER_SCALE, PRESENTER_X, PRESENTER_Y = .8, 160, 256
-
-
 def build_layers(scene, plan, folder, index, config):
     width = plan.get('width', 720)
     height, scale = width * 16 // 9, width / 720
     template = plan.get('template', 'headline_news')
     v3 = plan.get('edit_style', 'classic') == 'reels_v3'
     hook = v3 and bool(scene.get('hook_scene'))
-    has_presenter = bool(scene.get('presenter_windows'))
     context_chart = v3 and scene['media_type'] != 'graphic' and bool(scene.get('chart'))
     visual_first = (bool(scene.get('visual_first')) or v3) and scene['media_type'] != 'graphic' and not scene.get('chart')
     punch = v3 and plan.get('text_style') == 'punch'
@@ -318,21 +313,18 @@ def build_layers(scene, plan, folder, index, config):
     elif (template == 'data_comparison' or context_chart) and not visual_first and (not hook or context_chart):
         if not context_chart:
             draw.rectangle((0, 195 * scale, width, 890 * scale), fill=(245, 246, 248, 242))
-        elif not has_presenter:
-            # With a presenter the panel would sit on the person; text keeps its own plate.
+        else:
             draw.rounded_rectangle((32 * scale, 224 * scale, 654 * scale, 442 * scale),
                                    radius=20 * scale, fill=(16, 27, 45, 150))
         draw.rectangle((48 * scale, 212 * scale, 102 * scale, 218 * scale), fill=CORAL)
-        hero_y, hero_step, hero_size = ((182, 62, min(48, scene['font_size'])) if has_presenter
-                                             else (238, 83, min(64, scene['font_size'])))
+        hero_y, hero_step, hero_size = 238, 83, min(64, scene['font_size'])
         if scene.get('chart'):
             panel = chart_panel(scene['chart'], width, config, translucent=context_chart)
             chart_path = folder / f'chart-{index:02}.png'
             panel.save(chart_path)
             chart_layers.append({'path': chart_path, 'x': 48 * scale, 'y': 505 * scale,
                                  'start': .3, 'end': scene['frames'] / 30,
-                                 'animation': 'chart_reveal', 'size': panel.size, 'caption': False,
-                                 'hide_with_presenter': True})
+                                 'animation': 'chart_reveal', 'size': panel.size, 'caption': False})
         else:
             for item, label in enumerate(scene['lines'][:2]):
                 y = (545 + item * 125) * scale
@@ -341,15 +333,9 @@ def build_layers(scene, plan, folder, index, config):
                 font = load_font(config.font, int(30 * scale), True)
                 draw.text((68 * scale, y + 28 * scale), wrap(label, font, int(540 * scale)),
                           font=font, fill=PAPER if item == 0 else NAVY)
-    if has_presenter and (hook or context_chart):
-        # Headline sits on the photo next to the cut-out presenter; a soft plate keeps it readable.
-        draw.rounded_rectangle((32 * scale, 166 * scale, 654 * scale, 318 * scale),
-                               radius=18 * scale, fill=(16, 27, 45, 150))
     outro = v3 and bool(scene.get('outro_scene'))
-    punch_hook = punch and (hook or outro) and not has_presenter
-    if hook and has_presenter:
-        hero_y, hero_step, hero_size = 182, 62, min(48, scene['font_size'])
-    elif punch_hook:
+    punch_hook = punch and (hook or outro)
+    if punch_hook:
         hero_y, hero_step, hero_size = 400, 100, scene['font_size']  # replaced by the centred block below
     elif hook:
         hero_y, hero_step, hero_size = 228, 100, scene['font_size']
@@ -382,8 +368,6 @@ def build_layers(scene, plan, folder, index, config):
     draw.text((48 * scale, eyebrow_y * scale), str(scene.get('eyebrow', ''))[:40],
               font=load_font(config.font, int(23 * scale), True), fill=CORAL)
     label = {'image': '자료사진 · 크롭 적용' if v3 else '자료사진 · 크롭/줌 적용', 'video': '자료영상 · 원본 음성 제외', 'graphic': '설명 그래픽'}[scene['media_type']]
-    if has_presenter:
-        label += ' · AI 합성 진행자'  # disclosure stays on screen, out of the headline area
     font = load_font(config.font, int(16 * scale))
     source_note = str(scene.get('source_label') or '').strip()
     if scene.get('as_of'):
@@ -555,18 +539,7 @@ def segment(scene, plan, folder, index, config, previous_tail=None):
     inputs = ['-stream_loop', '-1', '-i', str(media)] if scene['media_type'] == 'video' else ['-i', str(media)]
     for path in [fixed] + [layer['path'] for layer in layers]:
         inputs.extend(['-loop', '1', '-framerate', '30', '-i', str(path)])
-    presenter_windows = scene.get('presenter_windows', [])
-    presenter_inputs = []
     next_index = len(layers) + 2
-    for window in presenter_windows:
-        inputs.extend(['-i', window['path']])
-        entry = {'video': next_index, 'matte': None}
-        next_index += 1
-        if window.get('matte'):
-            inputs.extend(['-i', window['matte']])
-            entry['matte'] = next_index
-            next_index += 1
-        presenter_inputs.append(entry)
     crossfade = (plan.get('edit_style', 'classic') == 'reels_v3' and index > 0
                  and scene.get('transition_type', 'cut') == 'fade' and previous_tail is not None)
     if crossfade:
@@ -595,28 +568,7 @@ def segment(scene, plan, folder, index, config, previous_tail=None):
     tail = folder / f'media-tail-{index:02}.png'
     filters = [base + '[pure]', '[pure]split=2[media][tail_source]',
                f"[tail_source]select='eq(n,{count - 1})',setpts=PTS-STARTPTS[tail]"]
-    if presenter_windows:
-        previous_media = 'media'
-        for window_index, (window, entry) in enumerate(zip(presenter_windows, presenter_inputs, strict=True)):
-            start, end = window['start'], window['end']
-            clip = f"trim=start={window['source_start']:.8f}:duration={end-start:.8f},fps=30,setpts=PTS-STARTPTS+{start:.8f}/TB"
-            if entry['matte'] is not None:
-                # Person cut out of the studio still and placed on the scene photo, slightly smaller.
-                size = f'{round(width * PRESENTER_SCALE / 2) * 2}:{round(height * PRESENTER_SCALE / 2) * 2}'
-                filters.append(f"[{entry['video']}:v]{clip}[pv{window_index}]")
-                filters.append(f"[{entry['matte']}:v]{clip},format=gray[pm{window_index}]")
-                filters.append(f'[pv{window_index}][pm{window_index}]alphamerge,scale={size}[presenter{window_index}]')
-                position = f'{round(PRESENTER_X * width / 720)}:{round(PRESENTER_Y * width / 720)}'
-            else:
-                filters.append(f"[{entry['video']}:v]{clip},scale={width}:{height},setsar=1[presenter{window_index}]")
-                position = '0:0'
-            out = f'presented{window_index}'
-            filters.append(f"[{previous_media}][presenter{window_index}]overlay={position}:eof_action=pass:"
-                           f"enable='gte(t,{start:.8f})*lt(t,{end:.8f})'[{out}]")
-            previous_media = out
-        filters.append(f'[{previous_media}]null[presented_media]')
-    else:
-        filters.append('[media]null[presented_media]')
+    filters.append('[media]null[presented_media]')
     if crossfade:
         previous_input = next_index
         filters.extend([f'[{previous_input}:v]format=rgba,fade=t=out:st=0:d=0.16:alpha=1[previous_photo]',
@@ -633,10 +585,6 @@ def segment(scene, plan, folder, index, config, previous_tail=None):
     for index_layer, layer in enumerate(layers):
         label = f'motion{index_layer}'
         chain, x, y, enable = motion_filter(layer, index_layer + 2, label, width / 720)
-        if layer.get('hide_with_presenter'):
-            # Charts never cover the presenter; they appear only outside presenter windows.
-            for window in presenter_windows:
-                enable = f"({enable})*not(between(t,{window['start']:.8f},{window['end']:.8f}))"
         filters.append(chain)
         out = f'layer{index_layer}'
         filters.append(f"[{previous}][{label}]overlay=x='{x}':y='{y}':enable='{enable}'[{out}]")
@@ -690,8 +638,6 @@ def render_reel(plan: dict, folder: Path, config: Settings) -> Path:
         tick, asset = time.perf_counter(), scene.get('asset_path')
         if asset and asset not in assets:
             assets[asset] = file_digest(Path(asset))
-        presenter_hashes = [[file_digest(Path(window['path'])), file_digest(Path(window['matte'])) if window.get('matte') else None]
-                            for window in scene.get('presenter_windows', [])]
         visual = {key: value for key, value in scene.items() if key != 'asset_path'}
         # Story scene counters depend on index AND the total scene count.
         previous_tail = folder / f'media-tail-{index - 1:02}.png' if index else None
@@ -699,7 +645,7 @@ def render_reel(plan: dict, folder: Path, config: Settings) -> Path:
                             and index and scene.get('transition_type') == 'fade' else None)
         key = digest([VERSION, plan.get('edit_style', 'classic'), plan.get('template', 'headline_news'), plan.get('category'),
                       plan.get('subtitle_style', 'clean'), plan.get('content_mode', 'news'), width, config.encoder, font_hash,
-                      index, len(scenes), assets.get(asset), visual, blend_dependency, presenter_hashes])
+                      index, len(scenes), assets.get(asset), visual, blend_dependency])
         cached = cache_path(config.data, 'reel-segments', key, '.mp4')
         tail_key = digest(['pure-media-tail-v2', plan.get('edit_style', 'classic'), assets.get(asset), scene['media_type'], width,
                            scene['frames'], index % 2, scene.get('blur_background') is True])

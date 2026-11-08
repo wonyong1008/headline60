@@ -17,7 +17,6 @@ from pydantic import Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import studio_store
-from app.anchors import experiments as anchor_experiments
 from app.config import settings
 from app.content_modes import creation_issues, mode_metadata, validation_issues
 from app.doctor import diagnose
@@ -103,18 +102,6 @@ def health() -> dict:
     return {"status": "ok", "service": "headline60", "version": "0.2.0"}
 
 
-@app.get("/api/anchor-experiments")
-def list_anchor_experiments() -> list[dict]:
-    return anchor_experiments.listing(settings)
-
-
-@app.get("/anchor-experiments/{experiment_id}/output.mp4")
-def anchor_experiment_video(experiment_id: str):
-    try:
-        path = anchor_experiments.video_path(settings, experiment_id)
-    except (ValueError, FileNotFoundError):
-        raise HTTPException(404, "진행자 실험 영상을 찾을 수 없습니다.") from None
-    return FileResponse(path, media_type="video/mp4")
 
 
 @app.get("/api/diagnostics")
@@ -204,7 +191,7 @@ def new_draft(value: DraftCreate):
     if len(articles) != len(set(value.article_ids)):
         raise ValueError("선택한 뉴스가 없습니다. 다시 수집·선택하세요.")
     draft = studio_store.create(settings, {**value.model_dump(), "articles": articles,
-        "evidence": [], "script": None, "voice": settings.voice, "voice_profile_id": "reels-natural-sohee" if any(p["voice_profile_id"] == "reels-natural-sohee" and p["available"] for p in profiles.listing(settings)) else "macos-yuna-news", "metrics": {}})
+        "evidence": [], "script": None, "voice": settings.voice, "voice_profile_id": "reels-male-ryan", "metrics": {}})
     return {**draft, **mode_metadata(draft)}
 
 
@@ -218,7 +205,7 @@ def source_draft(value: URLCreate):
     default = DraftCreate(article_ids=["url-import"], category="trending", subtitle_style="dynamic", template="story_explainer")
     draft = studio_store.create(settings, {**default.model_dump(), "source_url": url, "source_loaded": False,
         "articles": [], "evidence": [], "script": None, "voice": settings.voice,
-        "voice_profile_id": "reels-natural-sohee" if any(p["voice_profile_id"] == "reels-natural-sohee" and p["available"] for p in profiles.listing(settings)) else "macos-yuna-news", "metrics": {}})
+        "voice_profile_id": "reels-male-ryan", "metrics": {}})
     return manager.prepare(draft["id"], draft["revision"])
 
 
@@ -295,19 +282,17 @@ def render_draft(key: str, value: Revision):
     return manager.render(key, value.revision)
 
 
-VoiceChoice = Literal["reels-natural-sohee", "reels-male-ryan"] | None
+VoiceChoice = Literal["reels-male-ryan"] | None
 
 
 class SubmissionCreate(StrictModel):
     url: str = Field(max_length=2000)
-    anchor_id: Literal["headline60-brown-adult-01"] | None = None
     voice_profile_id: VoiceChoice = None
 
 
 class SelectedSubmission(StrictModel):
     article_ids: list[str] = Field(min_length=1, max_length=20)
     category: str = "economy"
-    anchor_id: Literal["headline60-brown-adult-01"] | None = None
     voice_profile_id: VoiceChoice = None
 
 
@@ -318,14 +303,14 @@ def list_submissions():
 
 @app.post("/api/submissions")
 def register_submission(value: SubmissionCreate):
-    return submissions.create(value.url, value.anchor_id, value.voice_profile_id)
+    return submissions.create(value.url, voice_profile_id=value.voice_profile_id)
 
 
 @app.post("/api/submissions/selected")
 def register_selected_submission(value: SelectedSubmission):
     if value.category not in CATEGORIES:
         raise ValueError("지원하는 카테고리를 선택하세요.")
-    return submissions.create_selected(value.article_ids, value.category, value.anchor_id, value.voice_profile_id)
+    return submissions.create_selected(value.article_ids, value.category, voice_profile_id=value.voice_profile_id)
 
 
 @app.post("/api/submissions/{key}/retry")
@@ -341,19 +326,6 @@ def rebuild_submission(key: str):
 @app.post("/api/submissions/{key}/cancel")
 def cancel_submission(key: str):
     return submissions.cancel(key)
-
-
-@app.get("/api/anchor-profiles")
-def anchor_profiles():
-    from app.anchors.production import profiles as anchor_profiles_list
-    return {"profiles": [{key: value for key, value in profile.items() if key != "thumbnail_path"}
-                         for profile in anchor_profiles_list(settings)]}
-
-
-@app.get("/api/anchors/{key}/thumbnail")
-def anchor_thumbnail(key: str):
-    from app.anchors.production import thumbnail_path
-    return FileResponse(thumbnail_path(settings, key))
 
 
 @app.get("/api/youtube/status")
@@ -379,9 +351,9 @@ def connect_youtube():
 def app_settings():
     return {"model": settings.model, "voice": settings.voice, "voices": korean_voices(),
             "tts_rate": settings.tts_rate, "encoder": settings.encoder, "root": str(settings.root),
-            "ollama_url": settings.ollama_url, "anchors": [],
+            "ollama_url": settings.ollama_url,
             "voice_profiles": profiles.listing(settings),
-            "features": {"news": True, "macos_tts": True, "neural_tts": any(p["available"] and p["engine"] == "qwen3_mlx" for p in profiles.listing(settings)), "lipsync": False}}
+            "features": {"news": True, "macos_tts": True, "neural_tts": any(p["available"] and p["engine"] == "qwen3_mlx" for p in profiles.listing(settings))}}
 
 
 @app.get("/api/voice-profiles")
@@ -522,7 +494,6 @@ def current_reels_samples() -> list[dict]:
 @app.get("/studio")
 @app.get("/history")
 @app.get("/settings")
-@app.get("/anchors")
 def home(request: Request):
     reels_samples = current_reels_samples() if request.url.path == "/" else []
     return templates.TemplateResponse(request=request, name="index.html", context={
@@ -619,7 +590,7 @@ def save_captions(job_id: str, value: CaptionBatch):
             raise ValueError("; ".join(issues))
         body = DraftEdit(revision=draft["revision"], script=script, evidence=draft["evidence"],
             seconds=draft["seconds"], resolution=draft["resolution"], voice=draft["voice"],
-            voice_profile_id=draft.get("voice_profile_id"), anchor_id=draft.get("anchor_id"), template=draft.get("template", "legacy"),
+            voice_profile_id=draft.get("voice_profile_id"), template=draft.get("template", "legacy"),
             edit_style=draft.get("edit_style", "classic"), narration_speed=draft.get("narration_speed", 1.0),
             content_mode=draft.get("content_mode", "news"), topic=draft.get("topic", ""),
             fiction_acknowledged=draft.get("fiction_acknowledged", False),

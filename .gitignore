@@ -18,13 +18,11 @@ logs/
 runtime/tts/.venv/
 runtime/tts/models/
 
-runtime/lipsync/vendor/
 
 # Private Google OAuth credentials
 docs/client_secret*.json
 **/token.json
 **/youtube-upload.json
-runtime/imagegen/.venv/
 
 # Local media, model weights and credentials are never source releases
 **/client_secret*.json

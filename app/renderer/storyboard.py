@@ -213,8 +213,6 @@ def build_plan(script: Script, folder: Path, request, config: Settings, news: di
             "content_mode": request.content_mode,
             "audio_path": str(narration), "music_path": music["local_path"] if music else None,
             "scenes": scenes}
-    from app.anchors.production import prepare_presenter
-    prepare_presenter(plan, folder, config, getattr(request, "anchor_id", None))
     save_json(folder / "reels-plan.json", plan)
     save_json(folder / "captions.json", {"alignment": "estimated spoken-length timing snapped to measured quiet intervals within 280ms; manually editable, not word alignment", "cues": global_cues})
     save_json(folder / "media-sources.json", list(used.values()))

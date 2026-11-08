@@ -98,7 +98,7 @@ class SubmissionQueue:
         payload = {**defaults.model_dump(), "articles": articles or [], "evidence": [], "script": None,
                    "voice": self.config.voice, "voice_profile_id": self._voice(row.get("voice_profile_id"), available),
                    "metrics": {}, "automatic": True,
-                   "submission_id": row["id"], "anchor_id": row["anchor_id"], "text_style": "punch"}
+                   "submission_id": row["id"], "text_style": "punch"}
         if articles:
             payload["topic"] = articles[0]["title"][:200]
         else:
@@ -109,24 +109,21 @@ class SubmissionQueue:
 
     @staticmethod
     def _voice(requested, available) -> str:
-        """The requested reels voice when installed, else the approved female voice, else macOS."""
+        """The male narrator is the only voice; a missing TTS runtime fails loudly at render time."""
         usable = {p["voice_profile_id"] for p in available if p["available"]}
-        for key in (requested, "reels-natural-sohee"):
-            if key and key in usable:
-                return key
-        return "macos-yuna-news"
+        return requested if requested in usable else "reels-male-ryan"
 
-    def _create(self, url: str, anchor_id=None, articles=None, category="trending", voice_profile_id=None) -> dict:
+    def _create(self, url: str, articles=None, category="trending", voice_profile_id=None) -> dict:
         with self.lock:
-            return self._register(url, anchor_id, articles, category, voice_profile_id)
+            return self._register(url, articles, category, voice_profile_id)
 
-    def _register(self, url, anchor_id, articles, category, voice_profile_id=None):
+    def _register(self, url, articles, category, voice_profile_id=None):
         key, now = uuid4().hex, datetime.now(UTC).isoformat()
         with store.connect(self.config) as db:
             db.execute("""INSERT INTO submissions
-                (id,url,title,status,stage,created_at,updated_at,anchor_id,voice_profile_id)
-                VALUES (?,?,?,'queued','queued',?,?,?,?)""",
-                       (key, url, articles[0]["title"] if articles else url, now, now, anchor_id, voice_profile_id))
+                (id,url,title,status,stage,created_at,updated_at,voice_profile_id)
+                VALUES (?,?,?,'queued','queued',?,?,?)""",
+                       (key, url, articles[0]["title"] if articles else url, now, now, voice_profile_id))
         try:
             self._draft(self.get(key), articles, category)
         except Exception as exc:
@@ -136,16 +133,16 @@ class SubmissionQueue:
         self.start()
         return result
 
-    def create(self, url: str, anchor_id=None, voice_profile_id=None) -> dict:
-        return self._create(public_url(url), anchor_id, voice_profile_id=voice_profile_id)
+    def create(self, url: str, voice_profile_id=None) -> dict:
+        return self._create(public_url(url), voice_profile_id=voice_profile_id)
 
-    def create_selected(self, article_ids: list[str], category: str, anchor_id=None, voice_profile_id=None) -> dict:
+    def create_selected(self, article_ids: list[str], category: str, voice_profile_id=None) -> dict:
         if not article_ids or category not in CATEGORIES:
             raise ValueError("기사와 올바른 카테고리를 선택하세요.")
         articles = studio_store.articles(self.config, article_ids)
         if len(articles) != len(set(article_ids)):
             raise ValueError("선택한 뉴스가 없습니다. 다시 수집·선택하세요.")
-        return self._create(public_url(articles[0]["url"]), anchor_id, articles, category, voice_profile_id)
+        return self._create(public_url(articles[0]["url"]), articles, category, voice_profile_id)
 
     def retry(self, key: str) -> dict:
         with self.lock:
