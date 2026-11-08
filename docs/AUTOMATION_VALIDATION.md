@@ -150,3 +150,7 @@
 - 사용자 결정에 따라 AI 진행자 기능과 제작 자산을 모두 삭제: `runtime/lipsync`(5.3GB), `runtime/imagegen`(1.1GB), `data/models/flux2-klein-4b`(15GB), `data/anchors`, `data/cache/presenter`, 립싱크 벤치마크·샘플, 작업 폴더의 anchor-attempt·presenter.mp4. `app/anchors`, `/api/anchor-*`, `/anchors` 페이지, 아나운서 선택 UI, 렌더러의 presenter 합성 코드, 관련 테스트 삭제. 디스크 여유 42GB→61GB.
 - 목소리: Sohee 프리셋 5종·macOS Yuna 프리셋·승인 파일·여성 샘플 삭제. `reels-male-ryan`만 제공, 기본·유일 선택.
 - 테스트 297개 통과, Ruff 통과. 서버 재시작 후 목소리 목록은 Ryan 1개(available=True).
+
+## 13차 — 2026-11-08 용량 정리
+- outputs/ 중간 산출물(음성 조각·장면 조각·PNG 레이어 등 5,491개 파일), 최종 영상 없는 폴더 12개, 옛 렌더러 키의 data/cache 전부 삭제 → 4.46GB 확보. 최종 output.mp4·대본·자막·메타데이터·업로드 기록은 보존. uv 패키지 캐시 2.2GB 정리. 디스크 여유 61GB→67GB.
+- 보존: Qwen3-TTS 모델 2.9GB, runtime/tts 465MB, 사진 보관함, SQLite, YouTube 인증.
