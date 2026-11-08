@@ -243,3 +243,15 @@ def test_punch_style_adds_boxed_hook_centered_captions_and_progress_bar(tmp_path
     assert bar["progress_offset"] == 10 and bar["progress_total"] == 40
     _chain, x, _y, enable = reels.motion_filter(bar, 2, "m", 1)
     assert enable == "1" and "min(1,(10.0000+t)/40.0000)" in x
+
+
+def test_outro_scene_gets_the_big_centred_cta_block_for_its_whole_length(tmp_path):
+    config = Settings(root=tmp_path)
+    scene = {"media_type": "image", "duration": 3, "frames": 90, "outro_scene": True, "visual_first": True,
+             "hook_headline_text": "구독·좋아요 눌러주세요!", "lines": ["구독·좋아요 눌러주세요!"], "fitted_lines": [("구독·좋아요 눌러주세요!", 0)],
+             "font_size": 72, "captions": [{"text": "도움 됐다면 구독과 좋아요, 꼭 눌러 주세요!", "start": 0, "end": 3}],
+             "credit": "fixture", "emphasis_words": ["구독", "좋아요"]}
+    plan = {"template": "story_explainer", "edit_style": "reels_v3", "text_style": "punch", "subtitle_style": "dynamic", "scenes": [scene]}
+    _fixed, layers = reels.build_layers(scene, plan, tmp_path, 0, config)
+    block = next(layer for layer in layers if layer.get("stamp"))
+    assert block["end"] == 3 and abs(block["x"] + block["size"][0] / 2 - 360) < 2

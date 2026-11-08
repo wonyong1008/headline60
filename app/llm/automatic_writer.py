@@ -188,6 +188,30 @@ def arrange_list(result: Story, evidence: list[Evidence], count: int, draft: dic
     return Story(title=result.title, scenes=scenes)
 
 
+CTA_LINES = ['도움 됐다면 구독과 좋아요, 꼭 눌러 주세요!', '다음 소식도 놓치기 싫다면 구독, 좋아요 부탁해요!',
+             '재밌었다면 좋아요와 구독, 잊지 마세요!', '이런 소식 계속 보고 싶다면 구독과 좋아요 눌러 주세요!']
+
+
+def cta_scene(draft: dict, ref: str, index: int) -> Scene:
+    """Closing call-to-action every automatic video ends with (3 seconds, big boxed text)."""
+    line = CTA_LINES[sum(map(ord, str(draft.get('id') or draft.get('topic') or ''))) % len(CTA_LINES)]
+    return Scene(headline='구독·좋아요 눌러주세요!', headline_text='구독·좋아요 눌러주세요!', narration=line, subtitle=line,
+                 visual_query='구독 좋아요 / smartphone like button', claim_ids=[ref], source_refs=[ref],
+                 scene_id='scene-cta', visual_type='stock_image', duration_seconds=3, story_role='conclusion',
+                 animation_type='pop', transition_type='fade', emphasis_words=['구독', '좋아요'])
+
+
+def with_cta(draft: dict, scenes: list[Scene]) -> list[Scene]:
+    """Append the CTA and re-balance: hook 3 s, CTA 3 s, the rest share the remaining seconds."""
+    scenes = [*scenes, cta_scene(draft, scenes[-1].claim_ids[0], len(scenes))]
+    body = scenes[1:-1]
+    share = round((draft['seconds'] - 6) / max(1, len(body)), 2)
+    for scene in body:
+        scene.duration_seconds = share
+    scenes[-2].duration_seconds = round(draft['seconds'] - 3 - 3 - sum(s.duration_seconds for s in body[:-1]), 2)
+    return scenes
+
+
 def fallback_script(draft: dict, evidence: list[Evidence], count: int, reason: str) -> tuple[Script, dict]:
     """No usable model answer: narrate the source's own sentences so production still completes."""
     sentences = []
@@ -214,7 +238,7 @@ def fallback_script(draft: dict, evidence: list[Evidence], count: int, reason: s
                             duration_seconds=round((draft['seconds'] - 3) / (count - 1), 2),
                             story_role='conclusion' if i == count - 1 else 'fact',
                             animation_type='slide_up', transition_type='fade'))
-    scenes[-1].duration_seconds = round(draft['seconds'] - sum(s.duration_seconds for s in scenes[:-1]), 2)
+    scenes = with_cta(draft, scenes)
     script = Script(title=_clip(topic, 30) if len(topic) >= 2 else '오늘의 이슈', hook=hook, scenes=scenes,
                     description=(' · '.join(dict.fromkeys(e.publisher for e in evidence))
                                  + ((' · 원문: ' + draft['source_url']) if draft.get('source_url') else '')
@@ -382,13 +406,13 @@ def _attempt(draft, config, evidence, count, schema, prompt, attempt, list_mode=
                 duration_seconds=3 if i == 0 else round((draft['seconds'] - 3) / (count - 1), 2),
                 story_role='hook' if i == 0 else 'conclusion' if i == count - 1 else 'context' if i == 1 else 'meaning' if i == count - 2 else 'fact',
                 animation_type='pop' if i == 0 else 'slide_up', transition_type='cut' if i == 0 else 'fade'))
-        scenes[-1].duration_seconds = round(draft['seconds'] - sum(s.duration_seconds for s in scenes[:-1]), 2)
+        scenes = with_cta(draft, scenes)
         description = ' · '.join(dict.fromkeys(f"{e.publisher} {str(e.published_date)[:7] if e.date_precision == 'month' else e.published_date}" for e in evidence))
         title = clean_title(result.title, draft.get('topic') or scenes[0].headline)
         script = Script(title=title if len(title) >= 2 else scenes[0].headline[:30], hook=scenes[0].narration, scenes=scenes,
                         description=(description + ((' · 원문: ' + draft['source_url']) if draft.get('source_url') else '') + ' · AI 초안 · 게시 전 내용 검토 필요')[:400], hashtags=['헤드라인60'])
         issues = script_issues(script, evidence, draft['seconds'])
-        texts = [s.narration for s in scenes]
+        texts = [s.narration for s in scenes if s.scene_id != 'scene-cta']
         from difflib import SequenceMatcher
         near_duplicate = any(SequenceMatcher(None, a, b).ratio() >= .75
                              for i, a in enumerate(texts) for b in texts[i + 1:])
@@ -404,11 +428,12 @@ def _attempt(draft, config, evidence, count, schema, prompt, attempt, list_mode=
         # Speech level (반말/해요체) is a style choice, never a reason to reject a draft.
         if re.search(r'[\u3400-\u9fff]', script.model_dump_json()):
             issues.append('한국어 대본에 한자가 섞였습니다.')
-        issues += faithfulness_issues(scenes, evidence)
+        sourced = [s for s in scenes if s.scene_id != 'scene-cta']  # the CTA is not article content
+        issues += faithfulness_issues(sourced, evidence)
         if issues:
             raise ContentIssues(issues, script, raw)
         # Only drafts that pass every deterministic check spend a second local-model call.
-        problems, verdict = model_check(scenes, evidence, config)
+        problems, verdict = model_check(sourced, evidence, config)
         raw['fact_check'] = {'response': verdict.get('response'), 'issues': problems}
         if problems:
             raise ContentIssues(problems, script, raw)

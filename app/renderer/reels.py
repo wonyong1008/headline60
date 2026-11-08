@@ -345,7 +345,8 @@ def build_layers(scene, plan, folder, index, config):
         # Headline sits on the photo next to the cut-out presenter; a soft plate keeps it readable.
         draw.rounded_rectangle((32 * scale, 166 * scale, 654 * scale, 318 * scale),
                                radius=18 * scale, fill=(16, 27, 45, 150))
-    punch_hook = punch and hook and not has_presenter
+    outro = v3 and bool(scene.get('outro_scene'))
+    punch_hook = punch and (hook or outro) and not has_presenter
     if hook and has_presenter:
         hero_y, hero_step, hero_size = 182, 62, min(48, scene['font_size'])
     elif punch_hook:
@@ -415,9 +416,9 @@ def build_layers(scene, plan, folder, index, config):
         path = folder / f'hero-{index:02}-punch.png'
         box_size = text_layer('\n'.join(lines), font, PAPER, path, box=True, stroke=3, center=True,
                               highlights=key_words(text, scene.get('emphasis_words') or []))
-        block_y = max(170, 560 - box_size[1] / scale / 2)
+        block_y = max(170, (640 if outro else 560) - box_size[1] / scale / 2)
         layers.append({'path': path, 'x': (width - box_size[0]) / 2, 'y': block_y * scale,
-                       'start': .05, 'end': min(2.4, scene['frames'] / 30), 'animation': 'pop',
+                       'start': .05, 'end': scene['frames'] / 30 if outro else min(2.4, scene['frames'] / 30), 'animation': 'pop',
                        'size': box_size, 'caption': False, 'stamp': True})
         hero_lines = []
     elif punch and not visual_first and hero_lines:

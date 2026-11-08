@@ -183,7 +183,7 @@ def test_compact_model_contract_reuses_script_and_real_source_ids(monkeypatch):
     monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
     draft = {'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급 계획'}
     script, _ = automatic_writer.generate_automatic(draft, Settings())
-    assert len(script.scenes) == 4 and sum(s.duration_seconds for s in script.scenes) == 30
+    assert len(script.scenes) == 5 and sum(s.duration_seconds for s in script.scenes) == 30  # 4 + CTA
     assert all(s.claim_ids == [source['id']] for s in script.scenes)
     assert requests[0]['keep_alive'] == 0
     assert not script_issues_for_test(script, source)
@@ -322,7 +322,7 @@ def test_local_fact_check_rejection_triggers_bounded_retry(monkeypatch):
     draft = {'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급 계획'}
     script, raw = automatic_writer.generate_automatic(draft, Settings())
     assert calls == ['write', 'check'] * automatic_writer.MAX_ATTEMPTS
-    assert any('원문과 다름' in warning for warning in raw['warnings']) and len(script.scenes) == 4
+    assert any('원문과 다름' in warning for warning in raw['warnings']) and len(script.scenes) == 5
 
 
 def test_tighten_only_removes_other_source_sentences_links_and_unsupported_additions():
@@ -393,7 +393,7 @@ def test_unparseable_model_output_falls_back_to_source_sentences(monkeypatch):
     monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(
         lambda request: httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': '{"title": "x"'}))))
     script, raw = automatic_writer.generate_automatic({'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급 계획 발표'}, Settings())
-    assert raw['fallback'] and len(script.scenes) == 4 and sum(s.duration_seconds for s in script.scenes) == 30
+    assert raw['fallback'] and len(script.scenes) == 5 and abs(sum(s.duration_seconds for s in script.scenes) - 30) < .05
     assert script.scenes[1].narration in source['excerpt']
 
 
@@ -511,12 +511,12 @@ def test_list_mode_makes_one_scene_per_item_after_the_hook(monkeypatch):
         return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': json.dumps(story)})
     monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
     script, _ = automatic_writer.generate_automatic({'category': 'trending', 'seconds': 60, 'evidence': evidence, 'topic': post['title']}, Settings())
-    assert counts[0] == 6 and len(script.scenes) == 6 and abs(sum(s.duration_seconds for s in script.scenes) - 60) < .05
+    assert counts[0] == 6 and len(script.scenes) == 7 and abs(sum(s.duration_seconds for s in script.scenes) - 60) < .05  # hook + 5 items + CTA
     assert script.scenes[1].headline == '1. 남산' and script.scenes[5].claim_ids == [evidence[4]['id']]
     # Model merged item 1 into the hook and dropped it: the list is re-arranged deterministically.
     story['scenes'] = [{**story['scenes'][0], 'headline': '1. 남산'}] + story['scenes'][2:]
     script, _ = automatic_writer.generate_automatic({'category': 'trending', 'seconds': 60, 'evidence': evidence, 'topic': post['title']}, Settings())
-    assert [s.headline for s in script.scenes] == ['서울 산책 코스 5가지', '1. 남산', '2. 한강', '3. 청계천', '4. 북촌', '5. 서울숲']
+    assert [s.headline for s in script.scenes] == ['서울 산책 코스 5가지', '1. 남산', '2. 한강', '3. 청계천', '4. 북촌', '5. 서울숲', '구독·좋아요 눌러주세요!']
     assert script.scenes[1].narration.startswith('남산은') and script.scenes[1].claim_ids == [evidence[0]['id']]
 
 
@@ -660,3 +660,23 @@ def test_news_article_with_large_link_menus_is_still_an_article(monkeypatch):
     monkeypatch.setattr(sources, 'fetch_public', lambda url, **k: (url, html.encode(), 'text/html; charset=utf-8'))
     page = sources.source_page('https://news.example.org/view/1')
     assert len(page['lines']) == 5 and page['lines'][0].startswith('기사 본문 0번째')
+
+
+def test_every_automatic_script_ends_with_a_subscribe_cta_and_keeps_total_seconds(monkeypatch):
+    from app.llm import automatic_writer
+    source = automatic.excerpts(page(), '주택 공급')[0]
+    story = {'title': '주택 공급 계획 읽는 법', 'scenes': [
+        {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까요?', 'source': 0, 'visual_query': '아파트 전경', 'visual_en': 'apartment buildings'},
+        {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지', 'visual_en': 'apartment buildings'},
+        {'headline': '계획의 의미', 'narration': '발표된 공급 계획은 실제 입주 실적과 구분해야 자료의 의미를 제대로 읽을 수 있어요.', 'source': 0, 'visual_query': '주택 건설', 'visual_en': 'apartment buildings'},
+        {'headline': '구별해서 보기', 'narration': '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이에요.', 'source': 0, 'visual_query': '아파트 전경', 'visual_en': 'apartment buildings'}]}
+    original = httpx.Client
+    def respond(request):
+        checking = 'checks' in json.loads(request.content)['format']['properties']
+        return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': all_faithful(4) if checking else json.dumps(story)})
+    monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
+    script, _ = automatic_writer.generate_automatic({'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급'}, Settings())
+    assert script.scenes[-1].scene_id == 'scene-cta' and '구독' in script.scenes[-1].narration and script.scenes[-1].duration_seconds == 3
+    assert abs(sum(s.duration_seconds for s in script.scenes) - 30) < .05 and script.scenes[0].duration_seconds == 3
+    fallback, _ = automatic_writer.fallback_script({'seconds': 60, 'topic': '주택 공급 계획'}, [Evidence.model_validate(source)], 8, 'test')
+    assert fallback.scenes[-1].scene_id == 'scene-cta' and abs(sum(s.duration_seconds for s in fallback.scenes) - 60) < .05
