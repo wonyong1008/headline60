@@ -27,7 +27,8 @@ CATEGORY_QUERIES = {'realestate': 'apartment buildings Seoul', 'economy': 'stock
 # Backgrounds must be photographs; diagrams, maps and logos read as clutter behind text.
 NOT_PHOTO = re.compile(r'chart|graph|diagram|\bmaps?\b|logo|icon|screenshot|comparison|table|\bplot|infographic|'
                        r'\bflag|coat of arms|\bseal\b|drawing|illustration|poster|document|\bscan|cartoon|sketch|sticker|anti-|banner|'
-                       r'wikipedia|wikimedia|translation|typography|\bfont\b|\btext\b', re.IGNORECASE)
+                       r'wikipedia|wikimedia|translation|typography|\bfont\b|\btext\b|editor experience|user interface|\bui\b|webpage|'
+                       r'website screenshot|\bmockup|wireframe', re.IGNORECASE)
 GRIM = re.compile(r'crash|accident|burn|destroy|wreck|\bdead|corpse|blood|\bwar\b|memorial|funeral|\bfire\b|protest|riot|'
                   r'ardea|heron|\bbird|\binsect|spider|snake', re.IGNORECASE)
 ABSTRACT = {'price', 'prices', 'decline', 'drop', 'rise', 'fall', 'increase', 'decrease', 'market', 'markets', 'comparison',
