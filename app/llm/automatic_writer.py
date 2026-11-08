@@ -352,6 +352,11 @@ source_outline는 원문에 소개된 항목 이름이다. 이 항목들을 적�
     if best is not None:
         # The user reviews facts before publishing: keep the most consistent complete draft
         # and pass the remaining check results along as review warnings instead of failing.
+        texts = [s.narration for s in best.script.scenes if s.scene_id != 'scene-cta']
+        if len(texts) - len(set(texts)) >= 2:
+            # Three or more identical sentences means the model had nothing to say: a broken
+            # input (no real article text), not a content judgement for the user to make.
+            raise LLMError('대본이 같은 문장을 반복합니다. 원문 본문을 제대로 읽지 못한 것으로 보여 영상을 만들지 않습니다.', raw=best.raw)
         best.raw['warnings'] = best.issues
         return best.script, best.raw
     # Never let the script step stop production: read the source's own sentences instead.

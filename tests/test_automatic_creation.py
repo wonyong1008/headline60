@@ -259,7 +259,7 @@ def test_writer_retries_with_feedback_at_most_three_times_and_trims_hook(monkeyp
     source = automatic.excerpts(page(), '주택 공급')[0]
     long_scene = '계획에 적힌 내용과 실제 입주 실적을 구별해서 보는 것이 이번 자료의 핵심이며 그 차이를 하나하나 짚어 보는 일이 필요하다고 볼 수 있어요.'
     bad = {'title': '주택 공급', 'scenes': [
-        {'headline': f'헤드라인{i}', 'narration': long_scene, 'source': 0, 'visual_query': '아파트', 'visual_en': 'apartment buildings'} for i in range(4)]}
+        {'headline': f'헤드라인{i}', 'narration': f'{i + 1}번째로, {long_scene}', 'source': 0, 'visual_query': '아파트', 'visual_en': 'apartment buildings'} for i in range(4)]}
     good = {'title': '주택 공급 계획 읽는 법', 'scenes': [
         {'headline': '계획과 입주', 'narration': '주택 공급 계획, 어떻게 읽을까요? 계획과 실적의 차이를 함께 살펴보는 것이 이번 자료를 읽는 순서예요.', 'source': 0, 'visual_query': '아파트 전경', 'visual_en': 'apartment buildings'},
         {'headline': '발표한 내용', 'narration': '정부가 발표한 도심 주택 공급 계획의 내용을 차근차근 살펴보는 것이 먼저예요.', 'source': 0, 'visual_query': '아파트 단지', 'visual_en': 'apartment buildings'},
@@ -703,3 +703,29 @@ def test_retired_pinned_photo_is_replaced_instead_of_blocking_an_automatic_rende
         {'headline': '넷째', 'narration': '넷째 장면 내레이션이에요.', 'asset_id': None, 'duration_seconds': 3}]}}
     service._validate_media(draft)
     assert draft['script']['scenes'][0]['asset_id'] == 'fresh-photo' and 'gone' not in picked
+
+
+def test_naver_portal_boilerplate_is_dropped_and_repeated_scripts_are_failures(monkeypatch):
+    from app.llm import automatic_writer
+    from app.llm.ollama import LLMError
+    from app.news import sources
+    html = ('<html><body><div class="_article_content">본문의 검색 링크는 AI 자동 인식으로 제공됩니다. 오분류 제보하기<br>'
+            '대한축구협회가 올해 안에 새 회장을 뽑지 못하게 됐다고 8일 밝혔습니다.<br>'
+            'FIFA가 협회 정관의 선거 규정을 문제 삼아 선거 절차를 멈추라고 요구했기 때문입니다.<br>'
+            '협회는 내년 초 FIFA와 다시 협의한 뒤 선거 일정을 새로 잡겠다고 설명했습니다.<br>'
+            '주요뉴스 해당 언론사에서 선정하며 언론사 페이지(아웃링크)로 이동해 볼 수 있습니다.</div></body></html>')
+    monkeypatch.setattr(sources, 'fetch_public', lambda url, **k: (url, html.encode(), 'text/html; charset=utf-8'))
+    page_ = sources.source_page('https://m.sports.naver.com/kfootball/article/1/2')
+    assert len(page_['lines']) == 3 and page_['lines'][0].startswith('대한축구협회가')
+    source = automatic.excerpts(page(), '주택 공급')[0]
+    same = '정부가 주택 공급 계획을 발표했다고 전해졌어요.'
+    story = {'title': '주택 공급', 'scenes': [
+        {'headline': '주택 공급 계획', 'narration': '주택 공급 계획, 어떻게 읽을까요?', 'source': 0, 'visual_query': '아파트', 'visual_en': 'apartment', 'key_phrase': '주택'}] + [
+        {'headline': f'장면 {n}', 'narration': same, 'source': 0, 'visual_query': '아파트', 'visual_en': 'apartment', 'key_phrase': '주택'} for n in range(3)]}
+    original = httpx.Client
+    def respond(request):
+        checking = 'checks' in json.loads(request.content)['format']['properties']
+        return httpx.Response(200, json={'done': True, 'done_reason': 'stop', 'response': all_faithful(4) if checking else json.dumps(story)})
+    monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
+    with pytest.raises(LLMError, match='반복'):
+        automatic_writer.generate_automatic({'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급'}, Settings())

@@ -84,7 +84,8 @@ class SourceHTML(HTMLParser):
         # Known article containers, including schema.org articleBody used by many Korean news sites.
         specific = (bool(set(attrs.get('class', '').split()) & {
             'se-main-container', 'se_component_wrap', 'view_cont', 'article_view', 'view-cont', 'article_body', 'article-body',
-            'news_view', 'article_txt', 'news_txt', 'art_body', 'article_content', 'news_content', 'view_text', 'article-content'})
+            'news_view', 'article_txt', 'news_txt', 'art_body', 'article_content', 'news_content', 'view_text', 'article-content',
+            '_article_content', '_article_body', 'newsct_article'})  # Naver news/sports/entertain
             or attrs.get('id') in {'postViewArea', 'newsViewArea', 'articleBody', 'article_body', 'articleBodyContents', 'dic_area'}
             or attrs.get('itemprop') == 'articleBody')
         selected = 2 if specific else 1 if tag in {'article', 'main'} else 0
@@ -151,6 +152,12 @@ def decode_html(data: bytes, content_type: str = '') -> str:
     return data.decode('utf-8', errors='replace')
 
 
+# Portal boilerplate that sits inside or next to article containers; never narrated.
+BOILERPLATE = re.compile(r'본문의 검색 링크는|오분류 제보|주요뉴스 해당 언론사|아웃링크|구독 신청|무료!|선착순|네이버페이|'
+                         r'언론사 페이지로 이동|AI 자동 인식|기사 추천|관련 기사|기사제공|저작권자|무단 전재|재배포 금지|구독하기|'
+                         r'^\s*광고\b|\bAD\b|이 기사를 추천|댓글\s*\d*$|더보기$', re.IGNORECASE)
+
+
 def merge_fragments(lines: list[str]) -> list[str]:
     """Join consecutive short fragments until a sentence ends (Naver SmartEditor splits lines
     every ~25 characters). Lines that already end a sentence are kept as they are."""
@@ -189,16 +196,22 @@ def source_page(url: str) -> dict:
     # Prefer whichever reading of the article container holds more text (<p> blocks or <br> runs).
     # <p> blocks keep sentences whole (Naver splits text into spans); <br>-only articles end up
     # as one oversized <p>, so then the container's text runs are the real paragraphs.
+    # Inside a recognised article container, prefer <p> paragraphs; when the body is <br>-separated
+    # text (Naver), the raw text runs carry far more words than the few <p> captions and win.
     container = parser.content_paragraphs
-    if not container or max(map(len, container)) > 600:
-        container = parser.container_lines or container
+    runs = parser.container_lines
+    if not container or max(map(len, container)) > 600 or sum(map(len, runs)) > 2 * sum(map(len, container)):
+        container = runs or container
     if not container:
         container = parser.densest_paragraphs()
     lines = list(dict.fromkeys(container or parser.paragraphs or parser.body_lines or parser.all_lines))
     if sum(len(line) for line in lines) < 100:
         raise ValueError('요약할 공개 본문을 찾지 못했습니다. 비공개·삭제·접근 제한 여부를 확인하세요.')
+    lines = [line for line in lines if not BOILERPLATE.search(line)]
     # Blog editors break one sentence over several short paragraphs; stitch them back together.
     lines = merge_fragments(lines)
+    if sum(len(line) for line in lines) < 100:
+        raise ValueError('요약할 공개 본문을 찾지 못했습니다. 비공개·삭제·접근 제한 여부를 확인하세요.')
     if not container:
         # No article block at all: decide between a story and an index page by how much of the
         # page's text is link labels. A found article block (news sites carry huge menus and
