@@ -465,7 +465,14 @@ def test_long_photo_queries_fall_back_to_two_word_subjects():
     scene = Scene(headline='약국', narration='약국 진열대 이야기를 해요.', visual_query='약국 진열대 / pharmacy shelf weight loss pills')
     assert discovery.query_variants(scene, 'health') == [
         'pharmacy shelf weight loss pills Korea', 'pharmacy shelf weight loss pills',
-        'pharmacy shelf Korea', 'pharmacy shelf', 'loss pills Korea', 'loss pills', 'pharmacy medicine shelf']
+        'pharmacy shelf Korea', 'pharmacy shelf', 'pharmacy medicine shelf']  # "loss pills" drops the subject
+    hacking = Scene(headline='해킹', narration='해킹 공격으로 위험한 사고가 났어요.', visual_query='해킹 / computer server room')
+    assert 'dark storm clouds' not in discovery.query_variants(hacking, 'trending')  # no symbolic weather for news
+    dump = Scene(headline='서버', narration='서버 메모리 덤프파일이 탈취됐어요.', visual_query='서버 / server memory dump file')
+    assert not any('dump file' in q and 'server' not in q for q in discovery.query_variants(dump, 'trending'))
+    assert not discovery.relevant('phone repair shop counter', 'coffee prince service counter', 'File:Coffee Prince service counter.JPG')
+    scene = Scene(headline='고양이', narration='검은 고양이 이야기예요.', visual_query='고양이 / black cat walking on street')
+    assert 'on street' not in discovery.query_variants(scene, 'health')  # no content word left: would match anything
 
 
 def test_one_minute_drafts_take_up_to_eight_excerpts_from_the_article(monkeypatch):

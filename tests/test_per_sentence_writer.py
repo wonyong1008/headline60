@@ -194,3 +194,10 @@ def test_the_first_screen_searches_for_the_story_subject_not_a_generic_street(mo
     script, raw, *_ = run(monkeypatch, spoken, hook={'hook': '12만 가구가 풀린다고요?', 'visual_en': '위기 상황'})
     assert raw['subject'] == '' and 'city street' not in script.scenes[0].visual_query
     assert script.scenes[0].visual_query.endswith('/ apartment construction site')  # first fact scene's subject
+
+
+def test_overlong_lines_keep_whole_sentences_or_are_skipped():
+    from app.llm.automatic_writer import fit_narration
+    long_sentence = '가' * 130 + '요.'
+    assert fit_narration(long_sentence) == ''
+    assert fit_narration('짧은 첫 문장이에요. ' + long_sentence) == '짧은 첫 문장이에요.'

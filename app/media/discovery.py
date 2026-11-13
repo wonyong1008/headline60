@@ -35,13 +35,14 @@ NOT_PHOTO = re.compile(r'chart|graph|diagram|\bmaps?\b|logo|icon|screenshot|comp
 SCREENSHOT = re.compile(r'screenshot|screen ?shot|screen capture|user interface|\bapp interface|\bweb ?page', re.IGNORECASE)
 # Common false friends of a search word: a payphone is not a smartphone, college football is not
 # the K League, and a college gate called "Government College" is not a government office.
-CONFUSABLE = [(r'\bphone|smartphone|iphone', r'pay ?phone|telephone|phone ?booth|phone ?box|rotary'),
+CONFUSABLE = [(r'\bphone|smartphone|iphone', r'pay ?phone|public phone|telephone|phone ?booth|phone ?box|rotary'),
               (r'football|soccer', r'american football|\bnfl\b|college football|michigan|penn state|\bbowl\b|touchdown|gridiron'),
               (r'government|office', r'college|school|provisional government|historic|museum|\bformer\b|ruins'),
               (r'\bapple\b', r'apple tree|apples\b|orchard|fruit|apple pie')]
 # Identifiable officials in a background suggest they are part of the story; a stock scene must not.
 PEOPLE = re.compile(r'\bpresident\b|\bminister\b|\bchairman\b|\bsenator\b|\bmayor\b|\bceo\b|\bportrait\b|'
-                    r'\bmet with\b|\bmeets\b|\bvisit(?:s|ed)?\b|\bheadshot\b|\bofficial photo', re.IGNORECASE)
+                    r'\bmet with\b|\bmeets\b|\bvisit(?:s|ed)?\b|\bheadshot\b|\bofficial photo|\baward|ceremony|'
+                    r'conference|summit|\bforum\b|delegation|press briefing', re.IGNORECASE)
 GRIM = re.compile(r'crash|accident|burn|destroy|wreck|\bdead|corpse|blood|\bwar\b|memorial|funeral|\bfire\b|protest|riot|'
                   r'ardea|heron|\bbird|\binsect|spider|snake', re.IGNORECASE)
 ABSTRACT = {'price', 'prices', 'decline', 'drop', 'rise', 'fall', 'increase', 'decrease', 'market', 'markets', 'comparison',
@@ -49,7 +50,12 @@ ABSTRACT = {'price', 'prices', 'decline', 'drop', 'rise', 'fall', 'increase', 'd
             'value', 'rate', 'rates', 'analysis', 'impact', 'effect', 'concept', 'news', 'issue', 'problem', 'risk',
             'dream', 'dreams', 'symbol', 'meaning', 'example', 'scene', 'footage', 'showing', 'error', 'message'}
 GENERIC = {'photo', 'image', 'file', 'jpg', 'jpeg', 'view', 'picture', 'scene', 'shot', 'close', 'closeup', 'background',
-           'city', 'street', 'building', 'people', 'person', 'man', 'woman', 'day', 'night'} | ABSTRACT
+           'city', 'street', 'building', 'people', 'person', 'man', 'woman', 'day', 'night',
+           # people, actions and settings say nothing about the subject ("Coffee Prince service counter")
+           'holding', 'looking', 'waiting', 'using', 'sitting', 'standing', 'showing', 'customer', 'customers',
+           'user', 'users', 'worker', 'workers', 'room', 'counter', 'window', 'area', 'front', 'side', 'inside',
+           'outside', 'interior', 'exterior', 'line', 'queue'} | ABSTRACT
+STOP = {'on', 'in', 'at', 'of', 'the', 'a', 'an', 'with', 'for', 'to', 'and', 'by', 'from', 'into'}
 DOWNLOAD_HOSTS = {'upload.wikimedia.org', 'thumb.wikimedia.org'}
 EXPLICIT = re.compile(r'nud[ei]|naked|porn|sexual intercourse|genital|penis|vulva|vagina|masturbat|노출|성기|나체', re.IGNORECASE)
 
@@ -126,6 +132,8 @@ def search(query: str, require_korea: bool = False) -> list[dict]:
             continue  # Korean politics/news must not be illustrated with another country's parliament
         if min(info.get('width', 0), info.get('height', 0)) < 640:
             continue
+        if info.get('height', 0) > 1.95 * max(1, info.get('width', 0)):
+            continue  # phone-screen captures are far taller than any camera photo
         download = info.get('thumburl') or info.get('url', '')
         if not re.search(r'\.jpe?g(?:\?|$)', download, re.IGNORECASE):  # photos, not PNG graphics
             continue
@@ -211,9 +219,15 @@ def query_variants(scene, category: str, index: int = 0, symbolic: bool | None =
                                               *[q for q in themed if q in dreamy], *rotated] if q))
     # News (any category, URL submissions included): the scene's own subject first. Seoul
     # scenery is only the last resort in ensure_media, never ahead of a real subject.
-    words = [w for w in first.split() if w.lower() not in ABSTRACT]
+    words = [w for w in first.split() if w.lower() not in ABSTRACT and w.lower() not in STOP]
     # Commons matches every word, so long queries often return nothing; try a shorter subject too.
-    shorter = (' '.join(words[:2]), ' '.join(words[-2:])) if len(words) > 2 else ()
+    # The writer names the subject first ("phone repair shop"), so the first two words come first;
+    # a variant left with no content word ("customer holding") would accept any photo.
+    content = [w for w in terms(' '.join(words)) if w not in GENERIC and len(w) >= 3 and not KOREA.match(w)]
+    # Every shorter variant keeps the main subject (the first content word): "dump file" from
+    # "server memory dump file" would find dump trucks.
+    shorter = [q for q in ((' '.join(words[:2]), ' '.join(words[-2:])) if len(words) > 2 else ())
+               if content and content[0] in terms(q)]
     base = list(dict.fromkeys(q for q in (first, ' '.join(words), *shorter) if q))[:4]
     # Korean news deserves Korean scenes: each subject with "Korea" first, then plain.
     ordered = []
@@ -221,8 +235,10 @@ def query_variants(scene, category: str, index: int = 0, symbolic: bool | None =
         if 'korea' not in q.lower() and 'seoul' not in q.lower():
             ordered.append(f'{q} Korea')
         ordered.append(q)
+    # Symbolic pictures (storm clouds, clover) suit dream readings, not news: a hacking story
+    # must not get rain clouds. A news scene that finds nothing reuses the story's own photos.
     default = [CATEGORY_QUERIES[category]] if category in CATEGORY_QUERIES and category != 'trending' else []
-    return list(dict.fromkeys([*ordered, *themed[:2], *default]))
+    return list(dict.fromkeys([*ordered, *default]))
 
 
 RECENT_FIRST_SCREENS = 12

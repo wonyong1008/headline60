@@ -315,6 +315,17 @@ def spoken_line(text: str, source: str = '') -> str:
     return ' '.join(to_haeyo(part) if not part.endswith(('?', '!')) else part for part in parts)
 
 
+def fit_narration(text: str, limit: int = 118) -> str:
+    """Whole sentences up to the scene limit; '' when even the first sentence is too long to speak in one scene."""
+    kept = ''
+    for part in re.split(r'(?<=[.!?])\s+', text.strip()):
+        candidate = f'{kept} {part}'.strip()
+        if len(candidate) > limit:
+            break
+        kept = candidate
+    return kept
+
+
 def _repair_digits(text: str, source: str) -> str:
     # qwen3 occasionally splits numbers inside JSON strings ("136:5", "정부2:4").
     if not re.search(r'\d:\d', source):
@@ -494,9 +505,14 @@ def generate_per_sentence(draft: dict, config, evidence: list[Evidence], count: 
                     scene_id='scene-01', visual_type='stock_image', duration_seconds=3, story_role='hook',
                     animation_type='pop', transition_type='cut')]
     used, log = [hook], []
-    for position, (sentence, index, detail) in enumerate(chosen, start=2):
-        last = position == len(chosen) + 1
+    for number, (sentence, index, detail) in enumerate(chosen, start=1):
+        last = number == len(chosen)
         line, problems = rewrite_sentence(config, sentence, detail, used, low, high, 0 if last else '2m')
+        line['narration'] = fit_narration(line['narration'])
+        if len(line['narration']) < 12:
+            log.append({'source': sentence, 'detail': detail, **line, 'problems': [*problems, '한 장면에 넣기엔 너무 긴 문장이라 건너뜀']})
+            continue
+        position = len(scenes) + 1
         used.append(line['narration'])
         log.append({'source': sentence, 'detail': detail, **line, 'problems': problems})
         ref = evidence[index].id
@@ -508,6 +524,8 @@ def generate_per_sentence(draft: dict, config, evidence: list[Evidence], count: 
                             visual_type='stock_image', duration_seconds=3,
                             story_role='conclusion' if last else 'fact', animation_type='slide_up',
                             transition_type='fade', emphasis_words=emphasis))
+    if len(scenes) < 4:
+        return None  # too few speakable sentences: the whole-script writer handles it
     if not subject:  # no usable subject from the hook call: the first fact scene's photo subject
         scenes[0].visual_query = f"{_clip(topic, 40)} / {log[0]['visual_en'] or 'newspaper'}"[:150]
     scenes = with_cta(draft, scenes)
@@ -517,7 +535,7 @@ def generate_per_sentence(draft: dict, config, evidence: list[Evidence], count: 
     script = Script(title=title if len(title) >= 2 else scenes[1].headline, hook=hook, scenes=scenes,
                     description=(description + ((' · 원문: ' + draft['source_url']) if draft.get('source_url') else '')
                                  + ' · AI 초안 · 게시 전 내용 검토 필요')[:400], hashtags=['헤드라인60'])
-    warnings = [f"장면 {i + 2}: {', '.join(item['problems'])}" for i, item in enumerate(log) if item['problems']]
+    warnings = [f"원문 문장 {i + 1}: {', '.join(item['problems'])}" for i, item in enumerate(log) if item['problems']]
     return script, {'writer': 'per_sentence', 'lines': log, 'hook': hook, 'subject': subject, 'targets': [low, high],
                     'warnings': warnings, 'attempt': 1}
 
