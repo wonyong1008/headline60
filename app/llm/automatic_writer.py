@@ -246,6 +246,253 @@ def fallback_script(draft: dict, evidence: list[Evidence], count: int, reason: s
     return script, {'fallback': True, 'warnings': ['대본 모델 실패로 원문 문장을 그대로 읽습니다: ' + reason[:200]]}
 
 
+# --- Per-sentence writer -------------------------------------------------------------------
+# A 4B model mixes facts and repeats itself when asked to plan a whole script at once, but it
+# rewrites ONE passage well. So code picks distinct source sentences (grounded by construction),
+# the model only rephrases each into spoken Korean, and code checks/repairs every line.
+
+SPOKEN_ENDING = re.compile(r'(?:어요|아요|해요|에요|예요|래요|대요|네요|세요|까요|군요|거든요|데요|돼요|져요|워요|와요|봐요|줘요|'
+                           r'나요|가요|려요|켜요|여요|녀요|셔요|쳐요|혀요|러요|서요|죠)[.!?~]*$')
+LINE_SCHEMA = {'type': 'object', 'required': ['narration', 'headline', 'key_phrase', 'visual_en'], 'properties': {
+    'narration': {'type': 'string'}, 'headline': {'type': 'string'},
+    'key_phrase': {'type': 'string'}, 'visual_en': {'type': 'string'}}}
+HOOK_SCHEMA = {'type': 'object', 'required': ['hook'], 'properties': {'hook': {'type': 'string'}}}
+NOT_SPOKEN = re.compile(r'기자\s*=|@|사진\s*=|무단|재배포|▶|☞|Copyright|ㅇㅇㅇ|\d{4}-\d{2}-\d{2}', re.IGNORECASE)
+# Blog asides ("저도…", "오늘은 … 정리해 볼게요") are not information worth a scene.
+CHATTER = re.compile(r'(?<![가-힣])(?:저도|저는|제가|저희|오늘은)|오늘 기회|정리를 해|정리해 ?보|정리해봤|포스팅|블로그|이웃님|여튼|아무튼|'
+                     r'살펴보도록|알아보도록|알아볼게|살펴볼게|해볼까 합니다|ㅎㅎ|ㅋㅋ|궁금하시죠|함께 보시죠')
+BULLET = re.compile(r'^[\s✅☑✔▶■□●○◆◇★☆※•·\-–—\U0001F300-\U0001FAFF\u2600-\u27BF]+')
+CHARS_PER_SECOND = 9.5  # Ryan at 1.28× (measured on finished videos: 350~434 chars → 37~47 s)
+
+
+def _has_final(syllable: str) -> bool:
+    code = ord(syllable) - 0xAC00
+    return 0 <= code < 11172 and code % 28 != 0
+
+
+def to_haeyo(text: str) -> str:
+    """Deterministic 해라체/명사 끝 → 해요체 (used when the model keeps the written style)."""
+    text = re.sub(r'[\s."\'”’]+$', '', text.strip())
+    if not text:
+        return text
+    if SPOKEN_ENDING.search(text):
+        return text + ('' if text[-1] in '.!?~' else '.')
+    if text.endswith('요'):  # a stray 요: "8785명요", "사이트다요", "암시해요요", "해요. 요"
+        base = re.sub(r'[\s.]+$', '', text[:-1])
+        if not base:
+            return text + '.'
+        if SPOKEN_ENDING.search(base):
+            return to_haeyo(base)
+        if base.endswith('다'):
+            converted = to_haeyo(base)
+            if not converted.endswith('다고 해요.') or len(base) < 2:
+                return converted
+            base = base[:-1]  # "사이트다요" is a noun + copula: 사이트예요
+        return base + ('이에요.' if _has_final(base[-1]) else '예요.')
+    for written, spoken in (('것이다', '거예요'), ('이다', '이에요'), ('까지다', '까지예요'), ('부터다', '부터예요'),
+                            ('있다', '있어요'), ('없다', '없어요'), ('한다', '해요'), ('된다', '돼요'), ('했다', '했어요')):
+        if text.endswith(written):
+            return text[:-len(written)] + spoken + '.'
+    if text.endswith('다') and len(text) > 1 and (ord(text[-2]) - 0xAC00) % 28 == 20:  # ㅆ받침+다: 됐다/었다/였다
+        return text[:-1] + '어요.'
+    if text.endswith('다'):
+        return text + '고 해요.'
+    return text + ('이에요.' if _has_final(text[-1]) else '예요.')
+
+
+def spoken_line(text: str) -> str:
+    """해요체 for every sentence of a narration, without the model's tiny filler tails ("이거예요.")."""
+    parts = [part for part in re.split(r'(?<=[.!?])\s+', text.strip()) if part.strip()]
+    if len(parts) > 1:
+        parts = [part for part in parts if len(re.sub(r'[\s.!?~]', '', part)) >= 6] or parts[:1]
+    return ' '.join(to_haeyo(part) if not part.endswith(('?', '!')) else part for part in parts)
+
+
+def _repair_digits(text: str, source: str) -> str:
+    # qwen3 occasionally splits numbers inside JSON strings ("136:5", "정부2:4").
+    if not re.search(r'\d:\d', source):
+        text = re.sub(r'(\d):(\d)', r'\1\2', text)
+    return text
+
+
+def _letters(text: str) -> str:
+    return re.sub(r'[^\uAC00-\uD7A3A-Za-z0-9]', '', text)
+
+
+def spoken_sentences(evidence: list[Evidence], topic: str = '') -> list[tuple[str, int]]:
+    head = _letters(topic)[:14]
+    found = []
+    for index, e in enumerate(evidence):
+        if e.scope != 'facts' or e.fact == e.title:
+            continue  # titles and outline items are not narration material
+        for sentence in re.split(r'(?<=[.!?])\s+|(?<=다\.)\s*', e.excerpt):
+            sentence = BULLET.sub('', ' '.join(sentence.split()))
+            if not 25 <= len(sentence) <= 220 or NOT_SPOKEN.search(sentence) or CHATTER.search(sentence):
+                continue
+            if len(head) >= 8 and head in _letters(sentence):
+                continue  # a blog intro that restates the title
+            found.append((sentence, index))
+    return found
+
+
+def pick_sentences(topic: str, evidence: list[Evidence], want: int) -> list[tuple[str, int, str]]:
+    """Distinct, informative sentences in article order, each with the following sentence as optional detail."""
+    from difflib import SequenceMatcher
+
+    from app.news.sources import terms
+    wanted = set(terms(topic))
+    candidates = spoken_sentences(evidence, topic)
+    scored = []
+    for order, (sentence, index) in enumerate(candidates):
+        score = sum(word in sentence for word in wanted) + 2 * bool(numeric_tokens(sentence)) - order * .05
+        score -= .5 * max(0, len(sentence) - 140) / 40  # very long sentences are hard to speak
+        scored.append((score, order, sentence, index))
+    chosen = []
+    for _score, order, sentence, index in sorted(scored, reverse=True):
+        if any(SequenceMatcher(None, sentence, other).ratio() > .5 for _o, other, _i in chosen):
+            continue
+        chosen.append((order, sentence, index))
+        if len(chosen) == want:
+            break
+    picked = {order for order, _s, _i in chosen}
+    result = []
+    for order, sentence, index in sorted(chosen):
+        follow = candidates[order + 1] if order + 1 < len(candidates) else None
+        detail = follow[0] if follow and order + 1 not in picked and follow[1] == index else ''
+        result.append((sentence, index, detail))
+    return result
+
+
+def _ask(config, prompt: str, schema: dict, temperature: float, keep_alive) -> dict:
+    with httpx.Client(timeout=180, trust_env=False) as client:
+        response = client.post(config.ollama_url + '/api/generate', json={
+            'model': config.model, 'prompt': prompt + ' /no_think', 'format': schema, 'think': False, 'stream': False,
+            'keep_alive': keep_alive, 'options': {'num_ctx': 2048, 'num_predict': 400, 'temperature': temperature}})
+        response.raise_for_status()
+        raw = response.json()
+    return json.loads(raw['response'])
+
+
+def line_problems(line: dict, source: str, used: list[str], low: int, high: int) -> list[str]:
+    from difflib import SequenceMatcher
+    narration, headline = line.get('narration', '').strip(), line.get('headline', '').strip()
+    problems = []
+    if not low - 15 <= len(narration) <= high + 20:
+        problems.append(f'길이 {len(narration)}자({low}~{high}자로)')
+    if not SPOKEN_ENDING.search(narration):
+        problems.append('해요체로 끝나지 않음')
+    if numeric_tokens(narration + ' ' + headline) - numeric_tokens(source):
+        problems.append('원문에 없는 숫자')
+    if re.search(r'[^\uAC00-\uD7A3\u3131-\u318E0-9A-Za-z\s.,!?~%·\-()\'"‘’“”…:/+&]', narration + headline):
+        problems.append('이상한 문자')
+    if any(SequenceMatcher(None, narration, other).ratio() > .6 for other in used):
+        problems.append('앞 장면과 거의 같은 문장')
+    return problems
+
+
+def rewrite_sentence(config, sentence: str, detail: str, used: list[str], low: int, high: int,
+                     keep_alive) -> tuple[dict, list[str]]:
+    material = f'기사 문장: "{sentence}"' + (f'\n이어지는 문장(필요하면 덧붙여도 됨): "{detail}"' if detail else '')
+    source = f'{sentence} {detail}'
+    prompt = f'''아래 기사 문장을 숏폼 뉴스 내레이션으로 바꿔라.
+{material}
+규칙:
+- narration: 위 문장들에 있는 내용만 {low}~{high}자, 한두 문장으로. 친구에게 말하듯 자연스럽게, 반드시 "~요"로 끝나는 해요체. 숫자·이름은 원문 그대로. 원문에 없는 내용을 덧붙이지 마라.
+- headline: 핵심을 12자 이내 명사형 한 마디로. 위 문장에 있는 단어만.
+- key_phrase: narration 안에 그대로 있는 핵심어 1~2개.
+- visual_en: 이 장면에 어울리는, 카메라로 찍을 수 있는 구체적 사물·장소 영어 2~4단어.'''
+    line = _ask(config, prompt, LINE_SCHEMA, .3, keep_alive)
+    problems = line_problems(line, source, used, low, high)
+    if problems:
+        line = _ask(config, prompt + f'\n이전 답의 문제: {", ".join(problems)}. 위 문장에만 있는 정보로 고쳐서 다시 써라.',
+                    LINE_SCHEMA, .2, keep_alive)
+        problems = line_problems(line, source, used, low, high)
+    # Deterministic repairs; anything still wrong falls back to the source sentence itself.
+    line = {key: _repair_digits(str(line.get(key, '')), source).strip() for key in LINE_SCHEMA['required']}
+    if (len(line['narration']) < 12 or numeric_tokens(line['narration']) - numeric_tokens(source)
+            or '앞 장면과 거의 같은 문장' in problems):
+        line['narration'] = sentence
+    line['narration'] = spoken_line(line['narration'])
+    if numeric_tokens(line['headline']) - numeric_tokens(source) or not 2 <= len(line['headline']) <= 14:
+        line['headline'] = _clip(line.get('key_phrase') or sentence, 14)
+    return line, line_problems(line, source, used, low, high)
+
+
+def hook_problems(hook: str, topic: str, source: str) -> list[str]:
+    problems = []
+    if not 8 <= len(hook) <= 28:
+        problems.append(f'길이 {len(hook)}자(12~22자로)')
+    if numeric_tokens(hook) - numeric_tokens(source):
+        problems.append('원문에 없는 숫자')
+    if len(_letters(hook)) >= 10 and _letters(hook)[:10] in _letters(topic):
+        problems.append('기사 제목을 그대로 베낌')
+    if re.search(r'[?!]\s*\S{0,2}[?!]|\?\s*요', hook) or '…' in hook:
+        problems.append('문장 부호가 이상함')
+    return problems
+
+
+def hook_line(config, topic: str, first: str, second: str) -> str:
+    source = f'{topic} {first} {second}'
+    prompt = f'''숏폼 뉴스 첫 화면에서 읽을 한 문장을 써라.
+기사 제목: {topic}
+핵심 사실: {first} / {second}
+- hook: 시청자가 스크롤을 멈출 12~22자 질문이나 감탄 한 문장. 기사 속 구체적인 이름이나 숫자를 하나 넣어라. 제목을 그대로 베끼지 말고, 원문에 없는 내용은 금지. 해요체("~요?", "~다고요?").'''
+    hook = str(_ask(config, prompt, HOOK_SCHEMA, .6, '2m').get('hook', '')).strip()
+    problems = hook_problems(hook, topic, source)
+    if problems:
+        hook = str(_ask(config, prompt + f'\n이전 답 "{hook}"의 문제: {", ".join(problems)}. 고쳐서 다시 써라.',
+                        HOOK_SCHEMA, .4, '2m').get('hook', '')).strip()
+    if hook_problems(hook, topic, source) and not (hook and not numeric_tokens(hook) - numeric_tokens(source)
+                                                   and 8 <= len(hook) <= 32 and '…' not in hook):
+        # The headline's own question ("갤럭시 별거 아니라며?") or its first clause is the safe fallback.
+        question = re.match(r'^(.{6,28}?[?？])', topic)
+        clause = re.split(r'…|\.\.\.|\s[-|]\s|\[', topic)[0].strip(' ,')
+        hook = question.group(1) if question else _clip(clause if len(clause) >= 8 else topic, 26)
+    hook = hook.replace('？', '?')
+    return hook if hook.endswith(('?', '!', '.', '요')) else hook + '?'
+
+
+def generate_per_sentence(draft: dict, config, evidence: list[Evidence], count: int):
+    """Returns (script, raw) or None when the article has too few usable sentences."""
+    topic = draft.get('topic') or (draft.get('articles') or [{}])[0].get('title', '')
+    chosen = pick_sentences(topic, evidence, count - 1)
+    if len(chosen) < 3:
+        return None
+    # Fill the target length: hook and CTA take ~6 s, the rest is shared by the body scenes.
+    target = (draft['seconds'] - 6) * CHARS_PER_SECOND / len(chosen)
+    low, high = max(30, int(target * .75)), min(140, int(target * 1.05))
+    hook = hook_line(config, topic, chosen[0][0], chosen[1][0])
+    hook_refs = list(dict.fromkeys(evidence[index].id for _sentence, index, _detail in chosen[:2]))
+    scenes = [Scene(headline=_clip(hook, 24), headline_text=_clip(hook, 24), narration=hook, subtitle=hook,
+                    visual_query=f"{_clip(topic, 40)} / city street", claim_ids=hook_refs, source_refs=hook_refs,
+                    scene_id='scene-01', visual_type='stock_image', duration_seconds=3, story_role='hook',
+                    animation_type='pop', transition_type='cut')]
+    used, log = [hook], []
+    for position, (sentence, index, detail) in enumerate(chosen, start=2):
+        last = position == len(chosen) + 1
+        line, problems = rewrite_sentence(config, sentence, detail, used, low, high, 0 if last else '2m')
+        used.append(line['narration'])
+        log.append({'source': sentence, 'detail': detail, **line, 'problems': problems})
+        ref = evidence[index].id
+        emphasis = [w for w in re.split(r'[\s,·/]+', line['key_phrase']) if len(w) >= 2 and w in line['narration']][:2]
+        scenes.append(Scene(headline=line['headline'], headline_text=line['headline'], narration=line['narration'],
+                            subtitle=line['narration'],
+                            visual_query=f"{line['headline']} / {line['visual_en'] or 'city street'}"[:150],
+                            claim_ids=[ref], source_refs=[ref], scene_id=f'scene-{position:02}',
+                            visual_type='stock_image', duration_seconds=3,
+                            story_role='conclusion' if last else 'fact', animation_type='slide_up',
+                            transition_type='fade', emphasis_words=emphasis))
+    scenes = with_cta(draft, scenes)
+    description = ' · '.join(dict.fromkeys(f"{e.publisher} {str(e.published_date)[:7] if e.date_precision == 'month' else e.published_date}" for e in evidence))
+    # The article's own headline is the most accurate strong title; a 4B model's rewrite can flip cause and effect.
+    title = ' '.join(clean_title(topic, scenes[1].headline).split()) if len(topic) <= 30 else _clip(' '.join(topic.split()), 60)
+    script = Script(title=title if len(title) >= 2 else scenes[1].headline, hook=hook, scenes=scenes,
+                    description=(description + ((' · 원문: ' + draft['source_url']) if draft.get('source_url') else '')
+                                 + ' · AI 초안 · 게시 전 내용 검토 필요')[:400], hashtags=['헤드라인60'])
+    warnings = [f"장면 {i + 2}: {', '.join(item['problems'])}" for i, item in enumerate(log) if item['problems']]
+    return script, {'writer': 'per_sentence', 'lines': log, 'hook': hook, 'targets': [low, high],
+                    'warnings': warnings, 'attempt': 1}
+
 VERDICT = {'type': 'object', 'additionalProperties': False, 'required': ['checks'], 'properties': {
     'checks': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False,
         'required': ['scene', 'faithful', 'unsupported_phrase', 'problem'], 'properties': {
@@ -303,6 +550,25 @@ def generate_automatic(draft, config):
     list_mode = draft['seconds'] == 60 and 4 <= len(listed) <= 8
     if list_mode:
         count = len(listed) + 1  # hook + one scene per numbered item, in the source's order
+    if not list_mode and draft.get('content_mode', 'news') == 'news':
+        per_sentence_error = ''
+        try:
+            produced = generate_per_sentence(draft, config, evidence, count)
+        except httpx.HTTPError as exc:
+            raise LLMError(f'자동 대본 생성 실패: {exc}') from exc
+        except (ValueError, KeyError, IndexError) as exc:  # pydantic ValidationError and JSON errors are ValueErrors
+            produced, per_sentence_error = None, f'문장별 작성 실패, 전체 작성으로 전환: {exc}'[:300]
+        if produced is not None:
+            return produced
+        script, raw = _generate_whole(draft, config, evidence, count, list_mode)
+        if per_sentence_error:
+            raw['per_sentence_error'] = per_sentence_error  # kept with the draft so a fallback is visible
+        return script, raw
+    return _generate_whole(draft, config, evidence, count, list_mode)
+
+
+def _generate_whole(draft, config, evidence, count, list_mode):
+    """The original single-prompt writer: list posts, very short articles and non-news modes."""
     schema = Story.model_json_schema()
     schema['properties']['scenes'].update(minItems=count, maxItems=count)
     schema['$defs']['Shot']['properties']['source']['enum'] = list(range(len(evidence)))

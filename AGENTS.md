@@ -3,7 +3,7 @@
 ## 2026-11-08 사용자 결정 — 아나운서·여성 목소리 제거 (아래 모든 아나운서·의상·립싱크·Sohee 기록은 과거 이력일 뿐, 더 진행하지 않는다)
 - AI 진행자(아나운서) 기능과 그 제작에 필요했던 모델·환경을 **모두 삭제**했다: `runtime/lipsync`(MuseTalk), `runtime/imagegen` + `data/models/flux2-klein-4b`(FLUX 의상), `data/anchors`, 진행자 캐시·벤치마크·샘플, `app/anchors`, 관련 API/UI/테스트. 하드디스크 약 21GB 확보. 다시 설치하지 않는다.
 - 목소리는 **남성 Ryan(`reels-male-ryan`, Qwen3-TTS) 하나만** 제공한다. 여성 Sohee 프로필·승인 샘플·macOS Yuna 프로필은 제거했다. 등록 화면의 목소리 선택도 남성만 남겼다.
-- 남은 파이프라인: URL → 본문 추출 → 근거 → Ollama 대본(숏폼 말투, CTA 장면) → Ryan TTS 1.28배 → Reels v3 punch 스타일(사진 배경·큰 자막·강조 박스·진행 바) → YouTube 공개 업로드.
+- 남은 파이프라인: URL → 본문 추출 → 근거 → Ollama 대본(2026-11-13부터 코드가 원문 문장 선택 → 모델은 문장별 해요체 재작성, 영상 제목=기사 제목, CTA 장면) → Ryan TTS 1.28배 → Reels v3 punch 스타일(사진 배경·큰 자막·강조 박스·진행 바) → YouTube 공개 업로드.
 
 ## 최신 우선 지침 — 2026-11-06 (아래 2026-10 기록보다 우선)
 - 기본 화면은 URL 등록 게시판(URL·아나운서 미포함/포함·등록). 등록 즉시 SQLite 큐 저장, 서버가 순서대로 원문 추출→근거 자동 연결→대본→TTS(1.18)→720p Reels v3→YouTube **비공개** 업로드. 상세: README, docs/AUTOMATION_VALIDATION.md, docs/YOUTUBE.md.
