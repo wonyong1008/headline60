@@ -364,13 +364,22 @@ def pick_sentences(topic: str, evidence: list[Evidence], want: int) -> list[tupl
 
 
 def _ask(config, prompt: str, schema: dict, temperature: float, keep_alive) -> dict:
-    with httpx.Client(timeout=180, trust_env=False) as client:
-        response = client.post(config.ollama_url + '/api/generate', json={
-            'model': config.model, 'prompt': prompt + ' /no_think', 'format': schema, 'think': False, 'stream': False,
-            'keep_alive': keep_alive, 'options': {'num_ctx': 2048, 'num_predict': 400, 'temperature': temperature}})
-        response.raise_for_status()
-        raw = response.json()
-    return json.loads(raw['response'])
+    """One small JSON answer. A cut-off or looping reply is retried once, then returns {} for the caller's fallback."""
+    for attempt in range(2):
+        with httpx.Client(timeout=180, trust_env=False) as client:
+            response = client.post(config.ollama_url + '/api/generate', json={
+                'model': config.model, 'prompt': prompt + ' /no_think', 'format': schema, 'think': False,
+                'stream': False, 'keep_alive': keep_alive,
+                'options': {'num_ctx': 2048, 'num_predict': 500, 'temperature': temperature if not attempt else .1}})
+            response.raise_for_status()
+            raw = response.json()
+        try:
+            answer = json.loads(raw.get('response') or '')
+        except json.JSONDecodeError:
+            continue
+        if isinstance(answer, dict):
+            return answer
+    return {}
 
 
 def line_problems(line: dict, source: str, used: list[str], low: int, high: int) -> list[str]:

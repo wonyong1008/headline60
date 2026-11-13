@@ -155,3 +155,25 @@ def test_model_ending_glitches_are_repaired_sentence_by_sentence():
     assert spoken_line('나타낼 수 있다고 해요. 요') == '나타낼 수 있다고 해요.'
     assert spoken_line('선거일이 바뀌었어요. 이거예요.') == '선거일이 바뀌었어요.'
     assert spoken_line('개인정보가 노출됐다. 주소가 드러났어요.') == '개인정보가 노출됐어요. 주소가 드러났어요.'
+
+
+def test_a_broken_model_reply_only_affects_its_own_scene(monkeypatch):
+    original, state = httpx.Client, {'broken': 0}
+
+    def respond(request):
+        body = json.loads(request.content)
+        if 'hook' in body['format']['properties']:
+            answer = json.dumps({'hook': '12만 가구가 풀린다고요?'}, ensure_ascii=False)
+        elif '12만' in body['prompt']:
+            state['broken'] += 1
+            answer = '{\n  "narration": "정부가 수도권에'  # cut off mid-string, every time
+        else:
+            sentence = re.search(r'기사 문장: "(.+?)"', body['prompt']).group(1)
+            answer = json.dumps(spoken(sentence, 1), ensure_ascii=False)
+        return httpx.Response(200, json={'done': True, 'response': answer})
+
+    monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
+    draft = {'category': 'realestate', 'seconds': 60, 'evidence': evidence(), 'topic': TOPIC}
+    script, raw = automatic_writer.generate_automatic(draft, Settings())
+    assert raw['writer'] == 'per_sentence' and state['broken'] >= 2
+    assert script.scenes[1].narration == '정부는 내년까지 수도권에 주택 12만 가구를 공급하는 계획을 발표했어요.'
