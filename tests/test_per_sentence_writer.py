@@ -177,3 +177,11 @@ def test_a_broken_model_reply_only_affects_its_own_scene(monkeypatch):
     script, raw = automatic_writer.generate_automatic(draft, Settings())
     assert raw['writer'] == 'per_sentence' and state['broken'] >= 2
     assert script.scenes[1].narration == '정부는 내년까지 수도권에 주택 12만 가구를 공급하는 계획을 발표했어요.'
+
+
+def test_added_asides_without_any_source_words_are_dropped():
+    from app.llm.automatic_writer import spoken_line
+    source = '축구협회 차기 회장 선거는 12월 말로 예정돼 있었다.'
+    assert spoken_line('축구협회 차기 회장 선거가 12월 말로 예정됐는데요. 이거 요즘 관심이 많아요.', source) \
+        == '축구협회 차기 회장 선거가 12월 말로 예정됐는데요.'
+    assert spoken_line('회장 선거가 12월 말이에요. 선거 일정이 바뀌었어요.', source) == '회장 선거가 12월 말이에요. 선거 일정이 바뀌었어요.'

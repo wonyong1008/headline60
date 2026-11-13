@@ -300,11 +300,17 @@ def to_haeyo(text: str) -> str:
     return text + ('이에요.' if _has_final(text[-1]) else '예요.')
 
 
-def spoken_line(text: str) -> str:
-    """해요체 for every sentence of a narration, without the model's tiny filler tails ("이거예요.")."""
+def _shares_words(part: str, source: str) -> bool:
+    stems = {word[:2] for word in re.findall(r'[\uAC00-\uD7A3A-Za-z0-9]{2,}', source)}
+    return any(word[:2] in stems for word in re.findall(r'[\uAC00-\uD7A3A-Za-z0-9]{2,}', part))
+
+
+def spoken_line(text: str, source: str = '') -> str:
+    """해요체 for every sentence of a narration, without the model's filler tails ("이거예요.", "요즘 관심이 많아요.")."""
     parts = [part for part in re.split(r'(?<=[.!?])\s+', text.strip()) if part.strip()]
     if len(parts) > 1:
-        parts = [part for part in parts if len(re.sub(r'[\s.!?~]', '', part)) >= 6] or parts[:1]
+        parts = [part for part in parts if len(re.sub(r'[\s.!?~]', '', part)) >= 6
+                 and (not source or _shares_words(part, source))] or parts[:1]
     return ' '.join(to_haeyo(part) if not part.endswith(('?', '!')) else part for part in parts)
 
 
@@ -421,7 +427,7 @@ def rewrite_sentence(config, sentence: str, detail: str, used: list[str], low: i
     if (len(line['narration']) < 12 or numeric_tokens(line['narration']) - numeric_tokens(source)
             or '앞 장면과 거의 같은 문장' in problems):
         line['narration'] = sentence
-    line['narration'] = spoken_line(line['narration'])
+    line['narration'] = spoken_line(line['narration'], source)
     if numeric_tokens(line['headline']) - numeric_tokens(source) or not 2 <= len(line['headline']) <= 14:
         line['headline'] = _clip(line.get('key_phrase') or sentence, 14)
     return line, line_problems(line, source, used, low, high)
