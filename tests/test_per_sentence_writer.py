@@ -16,6 +16,7 @@ LINES = ['정부는 내년까지 수도권에 주택 12만 가구를 공급하�
          '국토교통부는 주택 착공을 앞당기기 위해 수도권 인허가 절차를 6개월 단축한다고 밝혔다. 전문가들은 주택 실제 입주까지는 최소 4년이 걸릴 것으로 내다봤다.',
          '수도권 아파트 매매가격은 지난달 0.3% 올라 주택 상승세를 이어갔다. 정부는 다음 달 수도권 주택 세부 입지를 공개할 예정이다.']
 TOPIC = '수도권 주택 12만 가구 공급'
+REAL_CLIENT = httpx.Client
 
 
 def evidence():
@@ -27,7 +28,7 @@ def evidence():
 
 def run(monkeypatch, line_for, hook=None):
     """line_for(source_sentence, attempt) -> model answer for one rewrite call."""
-    original, calls, attempts = httpx.Client, [], {}
+    original, calls, attempts = REAL_CLIENT, [], {}
 
     def respond(request):
         body = json.loads(request.content)
@@ -128,9 +129,9 @@ def test_blog_asides_and_title_restatements_are_skipped_but_ordinary_words_are_n
 
 def test_rejected_hooks_fall_back_to_a_readable_part_of_the_headline(monkeypatch):
     monkeypatch.setattr(automatic_writer, '_ask', lambda *a, **k: {'hook': '대한축구협회, 올해 안에 새 회장 선출 무산…FIFA가 제동'})
-    hook = automatic_writer.hook_line(None, '대한축구협회, 올해 안에 새 회장 선출 무산…FIFA가 제동', 'a', 'b')
-    assert hook == '대한축구협회, 올해 안에 새 회장 선출 무산?'
-    hook = automatic_writer.hook_line(None, '갤럭시 별거 아니라며？ 계속된 하자에 역대급 위기', 'a', 'b')
+    hook, subject = automatic_writer.hook_line(None, '대한축구협회, 올해 안에 새 회장 선출 무산…FIFA가 제동', 'a', 'b')
+    assert hook == '대한축구협회, 올해 안에 새 회장 선출 무산?' and subject == ''
+    hook, _ = automatic_writer.hook_line(None, '갤럭시 별거 아니라며？ 계속된 하자에 역대급 위기', 'a', 'b')
     assert hook == '갤럭시 별거 아니라며?'
 
 
@@ -185,3 +186,11 @@ def test_added_asides_without_any_source_words_are_dropped():
     assert spoken_line('축구협회 차기 회장 선거가 12월 말로 예정됐는데요. 이거 요즘 관심이 많아요.', source) \
         == '축구협회 차기 회장 선거가 12월 말로 예정됐는데요.'
     assert spoken_line('회장 선거가 12월 말이에요. 선거 일정이 바뀌었어요.', source) == '회장 선거가 12월 말이에요. 선거 일정이 바뀌었어요.'
+
+
+def test_the_first_screen_searches_for_the_story_subject_not_a_generic_street(monkeypatch):
+    script, raw, *_ = run(monkeypatch, spoken, hook={'hook': '12만 가구가 풀린다고요?', 'visual_en': 'apartment construction site'})
+    assert script.scenes[0].visual_query.endswith('/ apartment construction site') and raw['subject'] == 'apartment construction site'
+    script, raw, *_ = run(monkeypatch, spoken, hook={'hook': '12만 가구가 풀린다고요?', 'visual_en': '위기 상황'})
+    assert raw['subject'] == '' and 'city street' not in script.scenes[0].visual_query
+    assert script.scenes[0].visual_query.endswith('/ apartment construction site')  # first fact scene's subject

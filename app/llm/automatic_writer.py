@@ -196,7 +196,7 @@ def cta_scene(draft: dict, ref: str, index: int) -> Scene:
     """Closing call-to-action every automatic video ends with (3 seconds, big boxed text)."""
     line = CTA_LINES[sum(map(ord, str(draft.get('id') or draft.get('topic') or ''))) % len(CTA_LINES)]
     return Scene(headline='구독·좋아요 눌러주세요!', headline_text='구독·좋아요 눌러주세요!', narration=line, subtitle=line,
-                 visual_query='구독 좋아요 / smartphone like button', claim_ids=[ref], source_refs=[ref],
+                 visual_query='구독 좋아요 / person holding smartphone', claim_ids=[ref], source_refs=[ref],
                  scene_id='scene-cta', visual_type='stock_image', duration_seconds=3, story_role='conclusion',
                  animation_type='pop', transition_type='fade', emphasis_words=['구독', '좋아요'])
 
@@ -256,7 +256,8 @@ SPOKEN_ENDING = re.compile(r'(?:어요|아요|해요|에요|예요|래요|대요
 LINE_SCHEMA = {'type': 'object', 'required': ['narration', 'headline', 'key_phrase', 'visual_en'], 'properties': {
     'narration': {'type': 'string'}, 'headline': {'type': 'string'},
     'key_phrase': {'type': 'string'}, 'visual_en': {'type': 'string'}}}
-HOOK_SCHEMA = {'type': 'object', 'required': ['hook'], 'properties': {'hook': {'type': 'string'}}}
+HOOK_SCHEMA = {'type': 'object', 'required': ['hook', 'visual_en'],
+               'properties': {'hook': {'type': 'string'}, 'visual_en': {'type': 'string'}}}
 NOT_SPOKEN = re.compile(r'기자\s*=|@|사진\s*=|무단|재배포|▶|☞|Copyright|ㅇㅇㅇ|\d{4}-\d{2}-\d{2}', re.IGNORECASE)
 # Blog asides ("저도…", "오늘은 … 정리해 볼게요") are not information worth a scene.
 CHATTER = re.compile(r'(?<![가-힣])(?:저도|저는|제가|저희|오늘은)|오늘 기회|정리를 해|정리해 ?보|정리해봤|포스팅|블로그|이웃님|여튼|아무튼|'
@@ -446,17 +447,27 @@ def hook_problems(hook: str, topic: str, source: str) -> list[str]:
     return problems
 
 
-def hook_line(config, topic: str, first: str, second: str) -> str:
+def subject_query(text: str) -> str:
+    """An English photo-search subject (2~6 plain words) or '' when the model gave something unusable."""
+    text = ' '.join(str(text or '').split())
+    return text if re.fullmatch(r"[A-Za-z][A-Za-z0-9'&\- ]{2,60}", text) and 1 <= len(text.split()) <= 6 else ''
+
+
+def hook_line(config, topic: str, first: str, second: str) -> tuple[str, str]:
+    """The opening line and the story's main photographable subject (first-screen / thumbnail photo)."""
     source = f'{topic} {first} {second}'
-    prompt = f'''숏폼 뉴스 첫 화면에서 읽을 한 문장을 써라.
+    prompt = f'''숏폼 뉴스 첫 화면에서 읽을 한 문장과 배경 사진 검색어를 써라.
 기사 제목: {topic}
 핵심 사실: {first} / {second}
-- hook: 시청자가 스크롤을 멈출 12~22자 질문이나 감탄 한 문장. 기사 속 구체적인 이름이나 숫자를 하나 넣어라. 제목을 그대로 베끼지 말고, 원문에 없는 내용은 금지. 해요체("~요?", "~다고요?").'''
-    hook = str(_ask(config, prompt, HOOK_SCHEMA, .6, '2m').get('hook', '')).strip()
+- hook: 시청자가 스크롤을 멈출 12~22자 질문이나 감탄 한 문장. 기사 속 구체적인 이름이나 숫자를 하나 넣어라. 제목을 그대로 베끼지 말고, 원문에 없는 내용은 금지. 해요체("~요?", "~다고요?").
+- visual_en: 이 기사의 핵심 대상을 찍은 사진을 찾을 영어 검색어 2~4단어. 기관이면 그 기관 이름이나 건물, 제품이면 제품 종류, 사람이면 그 사람이 일하는 장소나 하는 일. 추상어(crisis, policy, news) 금지.'''
+    first_answer = _ask(config, prompt, HOOK_SCHEMA, .6, '2m')
+    hook, visual = str(first_answer.get('hook', '')).strip(), subject_query(first_answer.get('visual_en'))
     problems = hook_problems(hook, topic, source)
     if problems:
-        hook = str(_ask(config, prompt + f'\n이전 답 "{hook}"의 문제: {", ".join(problems)}. 고쳐서 다시 써라.',
-                        HOOK_SCHEMA, .4, '2m').get('hook', '')).strip()
+        retry = _ask(config, prompt + f'\n이전 답 "{hook}"의 문제: {", ".join(problems)}. 고쳐서 다시 써라.',
+                     HOOK_SCHEMA, .4, '2m')
+        hook, visual = str(retry.get('hook', '')).strip(), visual or subject_query(retry.get('visual_en'))
     if hook_problems(hook, topic, source) and not (hook and not numeric_tokens(hook) - numeric_tokens(source)
                                                    and 8 <= len(hook) <= 32 and '…' not in hook):
         # The headline's own question ("갤럭시 별거 아니라며?") or its first clause is the safe fallback.
@@ -464,7 +475,7 @@ def hook_line(config, topic: str, first: str, second: str) -> str:
         clause = re.split(r'…|\.\.\.|\s[-|]\s|\[', topic)[0].strip(' ,')
         hook = question.group(1) if question else _clip(clause if len(clause) >= 8 else topic, 26)
     hook = hook.replace('？', '?')
-    return hook if hook.endswith(('?', '!', '.', '요')) else hook + '?'
+    return (hook if hook.endswith(('?', '!', '.', '요')) else hook + '?'), visual
 
 
 def generate_per_sentence(draft: dict, config, evidence: list[Evidence], count: int):
@@ -476,10 +487,10 @@ def generate_per_sentence(draft: dict, config, evidence: list[Evidence], count: 
     # Fill the target length: hook and CTA take ~6 s, the rest is shared by the body scenes.
     target = (draft['seconds'] - 6) * CHARS_PER_SECOND / len(chosen)
     low, high = max(30, int(target * .75)), min(140, int(target * 1.05))
-    hook = hook_line(config, topic, chosen[0][0], chosen[1][0])
+    hook, subject = hook_line(config, topic, chosen[0][0], chosen[1][0])
     hook_refs = list(dict.fromkeys(evidence[index].id for _sentence, index, _detail in chosen[:2]))
     scenes = [Scene(headline=_clip(hook, 24), headline_text=_clip(hook, 24), narration=hook, subtitle=hook,
-                    visual_query=f"{_clip(topic, 40)} / city street", claim_ids=hook_refs, source_refs=hook_refs,
+                    visual_query=f"{_clip(topic, 40)} / {subject or 'newspaper'}", claim_ids=hook_refs, source_refs=hook_refs,
                     scene_id='scene-01', visual_type='stock_image', duration_seconds=3, story_role='hook',
                     animation_type='pop', transition_type='cut')]
     used, log = [hook], []
@@ -497,6 +508,8 @@ def generate_per_sentence(draft: dict, config, evidence: list[Evidence], count: 
                             visual_type='stock_image', duration_seconds=3,
                             story_role='conclusion' if last else 'fact', animation_type='slide_up',
                             transition_type='fade', emphasis_words=emphasis))
+    if not subject:  # no usable subject from the hook call: the first fact scene's photo subject
+        scenes[0].visual_query = f"{_clip(topic, 40)} / {log[0]['visual_en'] or 'newspaper'}"[:150]
     scenes = with_cta(draft, scenes)
     description = ' · '.join(dict.fromkeys(f"{e.publisher} {str(e.published_date)[:7] if e.date_precision == 'month' else e.published_date}" for e in evidence))
     # The article's own headline is the most accurate strong title; a 4B model's rewrite can flip cause and effect.
@@ -505,7 +518,7 @@ def generate_per_sentence(draft: dict, config, evidence: list[Evidence], count: 
                     description=(description + ((' · 원문: ' + draft['source_url']) if draft.get('source_url') else '')
                                  + ' · AI 초안 · 게시 전 내용 검토 필요')[:400], hashtags=['헤드라인60'])
     warnings = [f"장면 {i + 2}: {', '.join(item['problems'])}" for i, item in enumerate(log) if item['problems']]
-    return script, {'writer': 'per_sentence', 'lines': log, 'hook': hook, 'targets': [low, high],
+    return script, {'writer': 'per_sentence', 'lines': log, 'hook': hook, 'subject': subject, 'targets': [low, high],
                     'warnings': warnings, 'attempt': 1}
 
 VERDICT = {'type': 'object', 'additionalProperties': False, 'required': ['checks'], 'properties': {

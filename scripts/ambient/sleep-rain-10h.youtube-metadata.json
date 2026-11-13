@@ -1,0 +1,42 @@
+{
+  "snippet": {
+    "title": "신생아 백색소음 10시간 🌧 아기 재우는 빗소리 · 계곡 물소리 · 빗길 차 소리 | 검은화면",
+    "description": "신생아·아기 재울 때 틀어두는 빗소리 10시간 연속 재생 영상이에요.\n잔잔한 빗소리에 계곡 물소리와 멀리 빗길을 지나가는 차 소리를 섞어, 엄마 배 속처럼 포근한 백색소음을 만들었어요.\n\n✔ 10시간 끊김 없이 이어지는 소리 (중간에 갑자기 커지는 소리 없음)\n✔ 화면이 거의 검은색이라 밤새 틀어도 방이 밝아지지 않아요\n✔ 차 소리는 멀리서 천천히 다가왔다 지나가요\n\n▶ 이렇게 틀어 주세요\n1. 스마트폰은 아기 머리맡에서 조금 떨어뜨려 두세요.\n2. 대화 소리보다 작은 볼륨이 적당해요.\n\n빗소리 10시간 · 검은화면 빗소리 · 아기 재우는 빗소리 · 신생아 백색소음 · 수면 빗소리 · 잠잘오는 빗소리\n\nRain sounds for sleeping 10 hours · baby sleep rain white noise · black screen\n\n#신생아백색소음 #빗소리 #아기재우기 #백색소음 #빗소리10시간 #검은화면 #수면유도",
+    "tags": [
+      "신생아 백색소음",
+      "신생아 백색소음 10시간",
+      "빗소리 10시간",
+      "빗소리 10시간 검은화면",
+      "검은화면 빗소리",
+      "아기 재우는 빗소리",
+      "아기 빗소리",
+      "아기 재우는 소리",
+      "아기 잠오는 소리",
+      "수면 빗소리",
+      "잠잘오는 빗소리",
+      "백색소음 빗소리",
+      "계곡 물소리",
+      "빗길 차소리",
+      "차 지나가는 소리",
+      "백색소음",
+      "수면유도",
+      "rain sounds for sleeping",
+      "baby sleep rain white noise",
+      "rain sounds 10 hours black screen"
+    ],
+    "categoryId": "26",
+    "defaultLanguage": "ko"
+  },
+  "localizations": {
+    "en": {
+      "title": "Baby Sleep White Noise 10 Hours 🌧 Rain, Stream & Passing Cars | Black Screen",
+      "description": "Gentle rain with a soft stream and distant cars passing on a wet road — 10 hours, continuous, for newborn and baby sleep.\n\n✔ No sudden loud sounds\n✔ Near-black screen that keeps the room dark\n\nPlace the phone a little away from your baby and keep the volume low.\n\n#rainsounds #babysleep #whitenoise #blackscreen"
+    }
+  },
+  "status": {
+    "selfDeclaredMadeForKids": false,
+    "containsSyntheticMedia": false
+  },
+  "notifySubscribers": false,
+  "note": "10시간 수면용 시험 영상(사용자 요청 2026-11-13). 소리는 numpy 합성(외부 음원 없음), 화면·썸네일은 Pillow로 직접 그림. 업로드는 사용자 확인 후."
+}

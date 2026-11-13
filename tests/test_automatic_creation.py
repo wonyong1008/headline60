@@ -465,7 +465,7 @@ def test_long_photo_queries_fall_back_to_two_word_subjects():
     scene = Scene(headline='약국', narration='약국 진열대 이야기를 해요.', visual_query='약국 진열대 / pharmacy shelf weight loss pills')
     assert discovery.query_variants(scene, 'health') == [
         'pharmacy shelf weight loss pills Korea', 'pharmacy shelf weight loss pills',
-        'pharmacy shelf Korea', 'pharmacy shelf', 'pharmacy medicine shelf']
+        'pharmacy shelf Korea', 'pharmacy shelf', 'loss pills Korea', 'loss pills', 'pharmacy medicine shelf']
 
 
 def test_one_minute_drafts_take_up_to_eight_excerpts_from_the_article(monkeypatch):
@@ -618,7 +618,10 @@ def test_trending_stories_use_neutral_korean_scenes_and_loose_library_tags_do_no
     from app.script.models import Scene, Script
     scene = Scene(headline='똥꿈', narration='똥 싸는 꿈 이야기예요.', visual_query='침대 / bed dirt')
     variants = discovery.query_variants(scene, 'trending')
-    assert variants[0] == 'bed sleeping night' and 'bed dirt Korea' in variants and 'Seoul city street' in variants
+    # A dream scene's own subject comes before the generic dream pictures, which come before scenery.
+    assert variants[:2] == ['bed dirt Korea', 'bed dirt']
+    assert variants.index('bed sleeping night') < variants.index('Seoul city street')
+    assert discovery.theme_queries('고양이한테 물리는 꿈') == discovery.DREAM_QUERIES  # 물리다 is not water
     config = Settings(root=tmp_path)
     from io import BytesIO
 
@@ -729,3 +732,95 @@ def test_naver_portal_boilerplate_is_dropped_and_repeated_scripts_are_failures(m
     monkeypatch.setattr(automatic_writer.httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(respond)))
     with pytest.raises(LLMError, match='반복'):
         automatic_writer.generate_automatic({'category': 'realestate', 'seconds': 30, 'evidence': [source], 'topic': '주택 공급'}, Settings())
+
+
+def test_news_photos_need_two_matching_words_and_scenery_is_only_a_last_resort():
+    from app.media import discovery
+    from app.script.models import Scene
+    cheer = 'File:Humphreys community experiences Korean-style professional baseball. Daejeon Baseball Stadium'
+    assert not discovery.relevant('soccer stadium crowd Korea', cheer.lower())
+    assert not discovery.relevant('football stadium crowd', 'hanwha eagles cheer leaders at the football stadium crowd',
+                                  'File:Hanwha Eagles cheer leaders.jpg')
+    assert not discovery.relevant('phone repair shop waiting', 'shoe repair shop, waiting customers', 'File:Shoe Repair.jpg')
+    assert discovery.relevant('soccer stadium crowd', 'seoul world cup stadium crowd before soccer kickoff',
+                              'File:Seoul World Cup Stadium crowd.jpg')
+    assert discovery.relevant('smartphone', 'a smartphone on a desk', 'File:Girl Holding a Smartphone.jpg')
+    assert discovery.PEOPLE.search('File:President Lee met with FIFA President Sepp Blatter.jpg')
+    assert discovery.NOT_PHOTO.search('File:BOU DCSA 1303 - Computer Programming - Unit 02 - Office Automation.jpg')
+    scene = Scene(headline='FIFA 제동', narration='FIFA가 제동을 걸었어요.', visual_query='FIFA 제동 / FIFA headquarters building')
+    variants = discovery.query_variants(scene, 'trending')
+    assert variants[0] == 'FIFA headquarters building Korea' and 'FIFA headquarters building' in variants
+    assert not any(q in variants for q in discovery.NEUTRAL_SCENES)
+
+
+def test_the_first_screen_rotates_and_falls_back_to_the_story_subject(tmp_path, monkeypatch):
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    from app.media import discovery
+    from app.media.library import register_upload
+    from app.script.models import Scene, Script
+    config = Settings(root=tmp_path)
+    ids = []
+    for n, name in enumerate(['Interesting house in Seoul', 'Seoul night skyline', 'Han River park Seoul']):
+        buffer = BytesIO(); PILImage.new('RGB', (900, 1200), (n * 40, 90, 90)).save(buffer, 'JPEG')
+        ids.append(register_upload(config, buffer.getvalue(), name=name, category='trending', license_type='CC-BY-4.0',
+                                   attribution='Someone', rights_confirmed=True, tags=['seoul'])['asset_id'])
+    searched = []
+    monkeypatch.setattr(discovery, 'search', lambda query, **k: searched.append(query) or [])
+    firsts = []
+    for title in ['축구협회 회장 선출 무산', '아이폰 듀오 수리 대란', '정부24 개인정보 유출']:
+        hook = Scene(headline=title, narration=f'{title} 소식이에요.', visual_query=f'{title} / Korea Football Association')
+        facts = [Scene(headline='사실', narration=f'{n}번째 사실을 전해요.', visual_query=f'사실 / meeting room table {n}')
+                 for n in range(3)]
+        script = Script(title=title, description='첫 화면 사진 검증입니다.', scenes=[hook, *facts])
+        discovery.ensure_media(config, script, 'trending')
+        firsts.append(script.scenes[0].asset_id)
+    assert len(set(firsts)) == 3  # a failed search no longer gives every video the same opening photo
+    # The fact scene tried the story subject before generic scenery.
+    assert searched.index('Korea Football Association') < searched.index(next(q for q in searched if q in discovery.NEUTRAL_SCENES))
+
+
+def test_failed_scenes_reuse_this_videos_photos_and_the_closing_card_repeats_the_opening(tmp_path, monkeypatch):
+    import io
+
+    from PIL import Image
+
+    from app.media import discovery
+    from app.script.models import Scene, Script
+    content = io.BytesIO()
+    Image.new('RGB', (720, 1280), 'gray').save(content, format='JPEG')
+    def search(query, **kwargs):
+        if query.startswith('Korea Football Association'):
+            return [{'name': f'File:Korea Football Association match {n}.jpg', 'author': 'A',
+                     'source_url': f'https://commons.wikimedia.org/wiki/File:KFA_{n}.jpg',
+                     'download_url': f'https://upload.wikimedia.org/kfa{n}.jpg', 'license_type': 'CC-BY-4.0',
+                     'license_url': discovery.LICENSE_URLS['CC-BY-4.0'], 'description': 'football'} for n in range(2)]
+        return []
+    monkeypatch.setattr(discovery, 'search', search)
+    monkeypatch.setattr(discovery, 'fetch_public', lambda url, **k: (url, content.getvalue(), 'image/jpeg'))
+    scenes = [Scene(headline='협회', narration='축구협회 소식이에요.', visual_query='협회 / Korea Football Association'),
+              *[Scene(headline='회의', narration=f'{n}번째 회의 소식이에요.', visual_query=f'회의 / meeting room {n}') for n in range(3)],
+              Scene(headline='구독', narration='구독과 좋아요 눌러 주세요!', visual_query='구독 / person holding smartphone', scene_id='scene-cta')]
+    script = Script(title='축구협회 회장 선출', description='사진 재사용 검증입니다.', scenes=scenes)
+    report = discovery.ensure_media(Settings(root=tmp_path), script, 'trending')
+    ids = [s.asset_id for s in script.scenes]
+    assert all(ids) and len(set(ids[:4])) == 2  # two relevant photos, reused instead of Seoul scenery
+    assert not any(q in report['queries'] for q in discovery.NEUTRAL_SCENES)
+    assert ids[-1] == ids[0]  # the subscribe card shows the opening photo again
+
+
+def test_photo_false_friends_are_rejected():
+    from app.media import discovery
+    assert discovery.theme_queries('지금 생긴 낯선 상황을 받아들여요') == []  # 지금 is not gold
+    assert discovery.theme_queries('금 시세가 올랐어요')[0] == 'gold bars'
+    def accepted(query, name, description=''):
+        haystack = (name + ' ' + description).lower()
+        return discovery.relevant(query, haystack, name) and not discovery.SCREENSHOT.search(description) and not any(
+            __import__('re').search(w, query, 2) and __import__('re').search(x, haystack) for w, x in discovery.CONFUSABLE)
+    assert not accepted('broken phone', 'File:Broken Pay Phone Downtown Miami.jpg')
+    assert not accepted('football stadium crowd', 'File:Stadium Crowd 2015 Michigan State vs Penn State Football Game.jpg')
+    assert not accepted('government office', 'File:Portal of Government College of Commerce (01).jpg', 'government office')
+    assert not accepted('phone screen', 'File:BridgingAMS Phone Screen At the bridge.jpg', 'Screenshot of the phone screen app')
+    assert accepted('cracked smartphone', 'File:Smartphone cracked screen.jpg', 'A cracked smartphone')

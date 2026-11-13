@@ -1,0 +1,41 @@
+{
+  "snippet": {
+    "title": "아기 울음 뚝 그치는 소리 1시간 💤 부스럭 비닐소리 | 신생아 백색소음 · 아기 재우는 소리",
+    "description": "우는 아기 달랠 때 틀어주는 부스럭 비닐 소리, 1시간 연속 재생 영상이에요.\n아기 울음 그치는 소리 · 아기 달래는 소리 · 신생아 백색소음으로 많이 찾는 바로 그 소리!\n\n▶ 이렇게 틀어 주세요\n1. 처음엔 울음소리가 묻힐 만큼 볼륨을 올려 주세요.\n2. 울음이 잦아들면 볼륨을 천천히 낮춰 주세요.\n3. 스마트폰은 아기 귀에서 조금 떨어뜨려 두세요.\n\n화면이 어두워서 밤중 수유·재우기 때 켜 두기 좋아요.\n도움이 되셨다면 저장해 두고 필요할 때 바로 틀어 주세요 💤\n\nBaby stop crying sound · plastic bag crinkle white noise · newborn sleep sound (1 hour)\n\n#아기울음 #아기달래기 #백색소음 #아기재우기 #신생아백색소음 #부스럭소리 #육아",
+    "tags": [
+      "아기 울음 그치는 소리",
+      "아기 울음 뚝",
+      "아기 달래는 소리",
+      "아기 재우는 소리",
+      "아기 잠오는 소리",
+      "아기 진정 소리",
+      "신생아 백색소음",
+      "신생아 백색소음 1시간",
+      "아기 백색소음",
+      "백색소음",
+      "부스럭 소리",
+      "비닐 바스락 소리",
+      "바스락 소리",
+      "비닐 소리",
+      "육아",
+      "baby stop crying sound",
+      "white noise baby sleep",
+      "baby sleep sound",
+      "plastic bag crinkle sound"
+    ],
+    "categoryId": "26",
+    "defaultLanguage": "ko"
+  },
+  "localizations": {
+    "en": {
+      "title": "Baby Stop Crying Sound 1 Hour 💤 Plastic Bag Crinkle White Noise | Newborn Sleep Sound",
+      "description": "Plastic bag crinkle sound to calm a crying baby — 1 hour, continuous.\n\n▶ How to use\n1. Start loud enough to cover the crying.\n2. Lower the volume slowly as your baby settles.\n3. Keep the phone a little away from your baby's ears.\n\nDark screen for night feeds and bedtime 💤\n\n#babystopcrying #whitenoise #babysleep"
+    }
+  },
+  "status": {
+    "selfDeclaredMadeForKids": false,
+    "containsSyntheticMedia": false
+  },
+  "notifySubscribers": false,
+  "note": "Headline.60 반응 시험 업로드(사용자 요청 2026-11-13). 소리는 numpy 합성(외부 음원 없음), 화면은 Pillow로 직접 그림. 공개 범위는 .env HEADLINE_YOUTUBE_PRIVACY를 따른다."
+}
